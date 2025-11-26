@@ -4,10 +4,34 @@ Project 1 cartpole:
 	basic cartpole with SB3
 
 Project 2 cartpole:
-	Obseleted
+	image feature extraction: from single image, extract the position and angle
 
 Project 3 cartpole:
-	basic cartpole with sequence of position state vector
+	basic cartpole with sequence of position state vector.
+	Roughly implemented. Require refactor
+	```
+	------------------------------------------
+	| rollout/                |              |
+	|    ep_len_mean          | 288         |
+	|    ep_rew_mean          | 288         |
+	| time/                   |              |
+	|    fps                  | 1151        |
+	|    iterations           | 98          |
+	|    time_elapsed         | 173         |
+	|    total_timesteps      | 200000      |
+	| train/                  |              |
+	|    approx_kl            | 0.00108728  |
+	|    clip_fraction        | 0.0972      |
+	|    clip_range           | 0.20        |
+	|    entropy_loss         | -0.53       |
+	|    explained_variance   | 0.785       |
+	|    learning_rate        | 0.000300    |
+	|    loss                 | 83.3147     |
+	|    n_updates            | 7820        |
+	|    policy_gradient_loss | 0.0101      |
+	|    value_loss           | 83.3099     |
+	------------------------------------------
+    ```
 
 Project 4 cartpole:
 	basic cartpole with sequence of image-extracted state vector
