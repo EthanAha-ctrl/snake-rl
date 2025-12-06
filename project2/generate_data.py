@@ -2,86 +2,95 @@ import gymnasium as gym
 import numpy as np
 import os
 import tqdm
-from stable_baselines3 import A2C
+import json
+import matplotlib.pyplot as plt
 
-def generate_data(num_episodes=200, data_dir="data"):
-    """
-    Generates data for training the perception model using a two-pass approach
-    with a memory-mapped file for efficient storage.
-
-    Args:
-        num_episodes (int): The number of episodes to run to generate data.
-        data_dir (str): The directory to save the data in.
-    """
+def generate_data(num_episodes=1000, data_dir="data"):
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
 
     env = gym.make("CartPole-v1", render_mode="rgb_array")
-    
-    # First, train an agent to solve the environment
-    print("Training a control agent to generate good data...")
-    model = A2C("MlpPolicy", env, verbose=0)
-    model.learn(total_timesteps=10_000)
-    print("Control agent trained.")
+    env.unwrapped.theta_threshold_radians = np.deg2rad(45.0)
 
-    # --- Pass 1: Count total frames ---
-    print("Pass 1: Counting total number of frames...")
-    total_frames = 0
-    for i in tqdm.tqdm(range(num_episodes)):
-        obs, _ = env.reset()
-        done = False
-        while not done:
-            action, _ = model.predict(obs, deterministic=True)
-            obs, _, terminated, truncated, _ = env.step(action)
-            done = terminated or truncated
-            total_frames += 1
-    
-    print(f"Counted {total_frames} total frames to be generated.")
+    obs, _ = env.reset()
+    initial_frame = env.render()
+    img_shape = initial_frame.shape
+    img_dtype = initial_frame.dtype
 
-    # --- Pass 2: Generate data and save to memmap ---
-    print("Pass 2: Generating data and writing to memory-mapped file...")
-    
-    # Get image shape from one render and save it
-    img_shape = env.render().shape
-    with open(os.path.join(data_dir, "metadata.txt"), "w") as f:
-        f.write(",".join(map(str, img_shape)))
-        
-    # Create the memory-mapped file
-    mmap_path = os.path.join(data_dir, "images.mmap")
+    x_threshold = env.unwrapped.x_threshold
+
+    metadata = {
+        "img_shape": list(img_shape),
+        "x_threshold": x_threshold,
+    }
+
+    with open(os.path.join(data_dir, "dataset_config.json"), "w") as f:
+        json.dump(metadata, f, indent=4)
+
+    mmap_path = os.path.join(data_dir, "images.bin")
     if os.path.exists(mmap_path):
-        os.remove(mmap_path) # Ensure we start fresh
-    images_mmap = np.memmap(mmap_path, dtype=np.uint8, mode='w+', shape=(total_frames, *img_shape))
-    
+        os.remove(mmap_path)
+
     labels = []
-    frame_idx = 0
-    for i in tqdm.tqdm(range(num_episodes)):
-        obs, _ = env.reset()
-        done = False
-        while not done:
-            action, _ = model.predict(obs, deterministic=True)
-            state, _, terminated, truncated, _ = env.step(action)
-            done = terminated or truncated
+    total_frames = 0
 
-            image = env.render()
-            
-            cart_position = state[0]
-            pole_angle = state[2]
+    with open(mmap_path, "wb") as f_out:
+        for _ in tqdm.tqdm(range(num_episodes)):
+            env.reset()
 
-            # Write directly to the memory-mapped array
-            images_mmap[frame_idx] = image
-            labels.append([cart_position, pole_angle])
-            
-            frame_idx += 1
-            obs = state
-            
-    # Flush memory map to disk and save labels
-    images_mmap.flush()
+            random_state = np.random.uniform(low=[-2.3, -0.5, -0.4, -0.5],
+                                           high=[2.3, 0.5, 0.4, 0.5])
+
+            env.unwrapped.state = random_state
+
+            done = False
+            steps = 0
+            while not done and steps < 100:
+                image = env.render()
+                f_out.write(image.tobytes())
+
+                current_state = env.unwrapped.state
+                labels.append([current_state[0], current_state[2]]) # Cart Pos, Pole Angle
+                total_frames += 1
+
+                action = env.action_space.sample()
+                _, _, terminated, truncated, _ = env.step(action)
+                done = terminated or truncated
+                steps += 1
+
+    os.rename(mmap_path, os.path.join(data_dir, "images.mmap"))
+
     np.save(os.path.join(data_dir, "labels.npy"), np.array(labels))
 
-    print(f"Generated {frame_idx} images and labels.")
-    print(f"Image data saved to {mmap_path}")
-    print(f"Label data saved to {os.path.join(data_dir, 'labels.npy')}")
+    print(f"Generated {total_frames} frames using Domain Randomization.")
 
+def visualize_data(data_dir="data"):
+    print("Loading data for visualization...")
+    labels_path = os.path.join(data_dir, "labels.npy")
+    if not os.path.exists(labels_path):
+        print(f"Error: {labels_path} not found.")
+        return
+
+    labels_arr = np.load(labels_path)
+
+    print("Visualizing data distribution...")
+    plt.figure(figsize=(12, 5))
+
+    plt.subplot(1, 2, 1)
+    plt.hist(labels_arr[:, 0], bins=50, color='blue', alpha=0.7)
+    plt.title("Cart Position Distribution")
+    plt.xlabel("Position")
+    plt.ylabel("Frequency")
+
+    plt.subplot(1, 2, 2)
+    plt.hist(labels_arr[:, 1], bins=50, color='green', alpha=0.7)
+    plt.title("Pole Angle Distribution")
+    plt.xlabel("Angle (Rad)")
+    plt.ylabel("Frequency")
+
+    plt.tight_layout()
+    plt.show()
 
 if __name__ == "__main__":
-    generate_data()
+    #generate_data()
+    visualize_data()

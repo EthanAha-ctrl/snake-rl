@@ -37,7 +37,7 @@ class TrainingState:
         mean_ep_len = (sum(self.episode_lengths[-10:]) / min(len(self.episode_lengths), 10)) if self.episode_lengths else 0.0
         time_elapsed = time.time() - self.start_time
         fps = int(self.global_step / time_elapsed) if time_elapsed > 0 else 0
-        
+
         return {
             "ep_len_mean": mean_ep_len,
             "ep_rew_mean": mean_ep_reward,
@@ -56,7 +56,7 @@ def collect_rollout(
     trainingState: TrainingState
 ) -> List[Transition]:
     transitions: List[Transition] = []
-    
+
     for _ in range(config.rollout_horizon):
         obs_stack = stacker.stacked()
         action, log_prob, value = trainer.predict(obs_stack)
@@ -99,10 +99,10 @@ def train(config: TrainConfig = None):
     obs = position_angle_from_obs(obs)
     stacker = HistoryStacker(obs_dim=obs.shape[0], history_len=config.history_len)
     stacker.reset(obs)
-    
+
     input_dim = obs.shape[0] * config.history_len + config.history_len
     action_dim = env.action_space.n
-    
+
     trainer = PPOTrainer(config, input_dim=input_dim, action_dim=action_dim)
     trainingState = TrainingState()
 
@@ -110,7 +110,7 @@ def train(config: TrainConfig = None):
         trainingState.iterations += 1
         transitions = collect_rollout(env, stacker, trainer, config, trainingState)
         train_stats = trainer.update_weights(transitions)
-        
+
         log_stats = trainingState.get_log_stats()
         log_stats.update(train_stats)
         trainer.log(log_stats)

@@ -205,3 +205,10 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Project specific ignores
+project2/data/
+project2/runs/
+*.pth
+*.mmap
+*.bin

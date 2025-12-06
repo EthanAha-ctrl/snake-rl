@@ -5,34 +5,32 @@ from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
 import numpy as np
 import os
+import json
+import json
+import shutil
 from torch.utils.tensorboard import SummaryWriter
+import sys
+
+def load_metadata(data_dir):
+    meta_path = os.path.join(data_dir, "dataset_config.json")
+    if not os.path.exists(meta_path):
+        raise FileNotFoundError(f"Metadata file not found at {meta_path}. Run generate_data.py first.")
+
+    with open(meta_path, "r") as f:
+        config = json.load(f)
+        return tuple(config["img_shape"])
 
 class CartPoleDataset(Dataset):
-    """
-    CartPole dataset that reads from a memory-mapped file.
-    This is very efficient for large datasets as it doesn't load the whole
-    dataset into RAM.
-    """
     def __init__(self, data_dir="data", transform=None):
-        """
-        Args:
-            data_dir (string): Directory with the images.mmap and labels.npy files.
-            transform (callable, optional): Optional transform to be applied on a sample.
-        """
         self.data_dir = data_dir
         self.transform = transform
-        
-        # Load labels to get dataset length
+
         self.labels = np.load(os.path.join(data_dir, "labels.npy"))
-        
-        # To determine the shape of the images, load metadata saved during generation
         try:
-            with open(os.path.join(data_dir, "metadata.txt"), "r") as f:
-                shape_str = f.read()
-                img_shape = tuple(map(int, shape_str.split(',')))
+             img_shape = load_metadata(data_dir)
         except FileNotFoundError:
             raise FileNotFoundError(
-                "metadata.txt not found. Please run generate_data.py to create the dataset and metadata."
+                "dataset_config.json not found. Please run generate_data.py to create the dataset and metadata."
             )
 
         num_samples = len(self.labels)
@@ -45,8 +43,6 @@ class CartPoleDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        # Accessing the memmap array by index is very fast.
-        # The OS handles loading the specific chunk of the file.
         image = self.images[idx]
         label = self.labels[idx]
 
@@ -56,8 +52,10 @@ class CartPoleDataset(Dataset):
         return image, torch.FloatTensor(label)
 
 class SimpleCNN(nn.Module):
-    def __init__(self):
+    def __init__(self, input_size=400):
         super(SimpleCNN, self).__init__()
+        final_dim = input_size // 4
+
         self.conv_layers = nn.Sequential(
             nn.Conv2d(3, 16, kernel_size=5, stride=1, padding=2),
             nn.ReLU(),
@@ -66,15 +64,12 @@ class SimpleCNN(nn.Module):
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2)
         )
-        # The transform resizes to 224x224
-        # After first max pool: 112x112
-        # After second max pool: 56x56
-        self.fc_input_features = 32 * 56 * 56 
-        
+        self.fc_input_features = 32 * final_dim * final_dim
+
         self.fc_layers = nn.Sequential(
             nn.Linear(self.fc_input_features, 120),
             nn.ReLU(),
-            nn.Linear(120, 2) # 2 outputs: cart_position and pole_angle
+            nn.Linear(120, 2)
         )
 
     def forward(self, x):
@@ -83,20 +78,26 @@ class SimpleCNN(nn.Module):
         x = self.fc_layers(x)
         return x
 
-def get_model():
-    """Returns the SimpleCNN model."""
-    return SimpleCNN()
+def get_model(input_size):
+    return SimpleCNN(input_size=input_size)
 
 def train_model(data_dir="data", model_save_path="position_detection.pth", num_epochs=25, batch_size=32, learning_rate=0.001):
-    """
-    Trains the perception model.
-    """
+    if os.path.exists("runs"):
+        shutil.rmtree("runs")
     writer = SummaryWriter(log_dir="runs/cartpole_experiment")
+
+    try:
+        img_shape = load_metadata(data_dir)
+    except FileNotFoundError:
+         print(f"Error: Data files not found in {data_dir}. Please run generate_data.py first.")
+         return
+
+    crop_size = min(img_shape[0], img_shape[1])
+    print(f"Detected Image Shape: {img_shape}. Using Crop Size: {crop_size}x{crop_size}")
 
     transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Resize((224, 224), antialias=True),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        transforms.CenterCrop(crop_size),
     ])
 
     try:
@@ -105,12 +106,10 @@ def train_model(data_dir="data", model_save_path="position_detection.pth", num_e
         print(f"Error: Data files not found in {data_dir}. Please run generate_data.py first.")
         return
 
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
-
-    model = get_model()
+    dataloader = DataLoader(dataset, batch_size=batch_size)
+    model = get_model(input_size=crop_size)
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
@@ -142,10 +141,4 @@ def train_model(data_dir="data", model_save_path="position_detection.pth", num_e
     print("TensorBoard logs saved to runs/cartpole_experiment")
 
 if __name__ == '__main__':
-    print("This script is for training the model.")
-    print("To train the model, you would run a command like:")
-    print("python cartpole_perception/train.py")
-    # To run the training, uncomment the following line:
-    train_model()
-    pass
-
+    train_model(num_epochs=25, batch_size=512, learning_rate=5e-5)
