@@ -141,4 +141,4 @@ def train_model(data_dir="data", model_save_path="position_detection.pth", num_e
     print("TensorBoard logs saved to runs/cartpole_experiment")
 
 if __name__ == '__main__':
-    train_model(num_epochs=25, batch_size=512, learning_rate=5e-5)
+    train_model(num_epochs=100, batch_size=64, learning_rate=5e-5)

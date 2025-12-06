@@ -11,11 +11,11 @@ def generate_data(num_episodes=1000, data_dir="data"):
 
     env = gym.make("CartPole-v1", render_mode="rgb_array")
     env.unwrapped.theta_threshold_radians = np.deg2rad(45.0)
+    env.unwrapped.x_threshold = 1.5
 
     obs, _ = env.reset()
     initial_frame = env.render()
     img_shape = initial_frame.shape
-    img_dtype = initial_frame.dtype
 
     x_threshold = env.unwrapped.x_threshold
 
@@ -38,8 +38,8 @@ def generate_data(num_episodes=1000, data_dir="data"):
         for _ in tqdm.tqdm(range(num_episodes)):
             env.reset()
 
-            random_state = np.random.uniform(low=[-2.3, -0.5, -0.4, -0.5],
-                                           high=[2.3, 0.5, 0.4, 0.5])
+            random_state = np.random.uniform(low=[-1.5, -0.5, -0.8, -0.5],
+                                           high=[1.5, 0.5, 0.8, 0.5])
 
             env.unwrapped.state = random_state
 

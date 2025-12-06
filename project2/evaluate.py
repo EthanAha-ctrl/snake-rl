@@ -10,6 +10,9 @@ import os
 
 def evaluate_model_live(model_path="position_detection.pth"):
     env = gym.make("CartPole-v1", render_mode="rgb_array")
+    env.unwrapped.theta_threshold_radians = np.deg2rad(45.0)
+    env.unwrapped.x_threshold = 1.5
+
     state, _ = env.reset()
 
     initial_frame = env.render()
@@ -55,9 +58,16 @@ def evaluate_model_live(model_path="position_detection.pth"):
         vis_image = image.copy()
         cv2.line(vis_image, (predicted_x, 0), (predicted_x, 400), (255, 0, 0), 2)
 
+        # Draw predicted angle
+        predicted_angle = prediction[1]
+        pole_length = 100
+        cart_y = 300  # valid for standard 400px height
+        end_x = int(predicted_x + pole_length * np.sin(predicted_angle))
+        end_y = int(cart_y - pole_length * np.cos(predicted_angle))
+        cv2.line(vis_image, (predicted_x, cart_y), (end_x, end_y), (255, 0, 0), 2)
+
         cv2.imshow("CartPole-v1", vis_image)
-        if cv2.waitKey(30) & 0xFF == ord('q'):
-            break
+        cv2.waitKey(30)
 
         print(f"Predicted: Cart Position={prediction[0]:.2f}, Pole Angle={prediction[1]:.2f}")
         print(f"Actual:    Cart Position={actual_cart_position:.2f}, Pole Angle={actual_pole_angle:.2f}")
