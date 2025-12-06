@@ -2,8 +2,8 @@ import numpy as np
 import torch
 import gymnasium as gym
 
-from train import ActorCritic, select_obs, HistoryStacker
-
+from history_stacker import position_angle_from_obs, HistoryStacker
+from ppo_trainer import ActorCritic
 
 history_len = 4
 use_random_action = False  # True = random actions, False = model actions
@@ -13,7 +13,7 @@ env = gym.make("CartPole-v1", render_mode=render_mode)
 env.unwrapped.theta_threshold_radians = np.deg2rad(45.0)
 
 obs, _ = env.reset()
-obs = select_obs(obs)
+obs = position_angle_from_obs(obs)
 
 stacker = HistoryStacker(obs_dim=obs.shape[0], history_len=history_len)
 stacker.reset(obs)
@@ -38,9 +38,9 @@ for _ in range(1000):
     env.render()
     if terminated or truncated:
         next_obs, _ = env.reset()
-        next_obs = select_obs(next_obs)
+        next_obs = position_angle_from_obs(next_obs)
         stacker.reset(next_obs)
     else:
-        stacker.append(select_obs(next_obs), action)
+        stacker.append(position_angle_from_obs(next_obs), action)
 
 env.close()
