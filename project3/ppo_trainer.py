@@ -29,9 +29,9 @@ class ActorCritic(nn.Module):
         super().__init__()
         self.feature_extractor = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
-            nn.Tanh(),
+            nn.SiLU(),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.Tanh(),
+            nn.SiLU(),
         )
         self.policy_head = nn.Linear(hidden_dim, action_dim)
         self.value_head = nn.Linear(hidden_dim, 1)
@@ -73,15 +73,15 @@ def _compute_gae(transitions: List[Transition], gamma: float, lam: float) -> Tup
 class Logger:
     def log(self, stats: Dict[str, float]) -> None:
         print("------------------------------------------")
-        print("| rollout/                |              |")
+        print("| rollout/                |             |")
         print(f"|    ep_len_mean          | {stats.get('ep_len_mean', 0):<12.0f}|")
         print(f"|    ep_rew_mean          | {stats.get('ep_rew_mean', 0):<12.0f}|")
-        print("| time/                   |              |")
+        print("| time/                   |             |")
         print(f"|    fps                  | {int(stats.get('fps', 0)):<12d}|")
         print(f"|    iterations           | {int(stats.get('iterations', 0)):<12d}|")
         print(f"|    time_elapsed         | {int(stats.get('time_elapsed', 0)):<12d}|")
         print(f"|    total_timesteps      | {int(stats.get('total_timesteps', 0)):<12d}|")
-        print("| train/                  |              |")
+        print("| train/                  |             |")
         print(f"|    approx_kl            | {stats.get('approx_kl', 0):<12.8f}|")
         print(f"|    clip_fraction        | {stats.get('clip_fraction', 0):<12.4f}|")
         print(f"|    clip_range           | {stats.get('clip_range', 0):<12.2f}|")
@@ -91,7 +91,7 @@ class Logger:
         print(f"|    loss                 | {stats.get('loss', 0):<12.4f}|")
         print(f"|    n_updates            | {int(stats.get('n_updates', 0)):<12d}|")
         print(f"|    policy_gradient_loss | {stats.get('policy_gradient_loss', 0):<12.4f}|")
-        print(f"|    value_loss           | {stats.get('value_loss', 0):<12.4f}|")
+        print(f"|    value_loss           | {statsev.get('value_loss', 0):<12.4f}|")
         print("------------------------------------------")
 
 
