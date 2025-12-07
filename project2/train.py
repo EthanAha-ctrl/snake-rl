@@ -11,6 +11,8 @@ import shutil
 from torch.utils.tensorboard import SummaryWriter
 import sys
 
+import time
+
 def load_metadata(data_dir):
     meta_path = os.path.join(data_dir, "dataset_config.json")
     if not os.path.exists(meta_path):
@@ -66,17 +68,35 @@ class SimpleCNN(nn.Module):
         )
         self.fc_input_features = 32 * final_dim * final_dim
 
-        self.fc_layers = nn.Sequential(
+        self.shared_fc = nn.Sequential(
             nn.Linear(self.fc_input_features, 120),
-            nn.ReLU(),
-            nn.Linear(120, 2)
+            nn.ReLU()
+        )
+
+        # Head 1: Position
+        self.pos_head = nn.Sequential(
+            nn.Linear(120, 64),
+            nn.SiLU(),
+            nn.Linear(64, 1)
+        )
+
+        # Head 2: Angle
+        self.angle_head = nn.Sequential(
+            nn.Linear(120, 64),
+            nn.SiLU(),
+            nn.Linear(64, 1)
         )
 
     def forward(self, x):
         x = self.conv_layers(x)
         x = torch.flatten(x, 1)
-        x = self.fc_layers(x)
-        return x
+        x = self.shared_fc(x)
+        
+        pos = self.pos_head(x)
+        angle = self.angle_head(x)
+        
+        # Concat to match shape [batch_size, 2]
+        return torch.cat((pos, angle), dim=1)
 
 def get_model(input_size):
     return SimpleCNN(input_size=input_size)
@@ -115,6 +135,7 @@ def train_model(data_dir="data", model_save_path="position_detection.pth", num_e
 
     print("Starting training with SimpleCNN and TensorBoard logging...")
     for epoch in range(num_epochs):
+        epoch_start_time = time.time()
         running_loss = 0.0
         for i, (inputs, labels) in enumerate(dataloader):
             inputs, labels = inputs.to(device), labels.to(device)
@@ -122,14 +143,19 @@ def train_model(data_dir="data", model_save_path="position_detection.pth", num_e
             optimizer.zero_grad()
 
             outputs = model(inputs)
-            loss = criterion(outputs, labels)
+            # Weighted MSE: penalize angle error (index 1) 20x more than position error
+            loss_pos = (outputs[:, 0] - labels[:, 0]) ** 2
+            loss_angle = (outputs[:, 1] - labels[:, 1]) ** 2
+            loss = torch.mean(loss_pos + 20.0 * loss_angle)
+            
             loss.backward()
             optimizer.step()
 
             running_loss += loss.item()
 
         epoch_loss = running_loss / len(dataloader)
-        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}")
+        epoch_duration = time.time() - epoch_start_time
+        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}, Time: {epoch_duration:.2f}s")
         writer.add_scalar("Training Loss/Epoch", epoch_loss, epoch)
 
     print("Finished training.")
@@ -141,4 +167,4 @@ def train_model(data_dir="data", model_save_path="position_detection.pth", num_e
     print("TensorBoard logs saved to runs/cartpole_experiment")
 
 if __name__ == '__main__':
-    train_model(num_epochs=100, batch_size=64, learning_rate=5e-5)
+    train_model(num_epochs=10, batch_size=64, learning_rate=5e-4)
