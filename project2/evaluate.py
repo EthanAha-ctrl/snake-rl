@@ -6,6 +6,7 @@ from train import get_model, CartPoleDataset
 import cv2
 import json
 import os
+import pickle
 
 
 def evaluate_model_live(model_path="position_detection.pth"):
@@ -40,8 +41,17 @@ def evaluate_model_live(model_path="position_detection.pth"):
         transforms.CenterCrop(crop_size),
     ])
 
+    pos_errors = []
+    angle_errors = []
+    steps_collected = 0
+    target_steps = 1000
+
     done = False
-    while not done:
+    while steps_collected < target_steps:
+        if done:
+            state, _ = env.reset()
+            done = False
+
         image = env.render()
 
         input_tensor = transform(image).unsqueeze(0).to(device)
@@ -72,12 +82,26 @@ def evaluate_model_live(model_path="position_detection.pth"):
         print(f"Predicted: Cart Position={prediction[0]:.2f}, Pole Angle={prediction[1]:.2f}")
         print(f"Actual:    Cart Position={actual_cart_position:.2f}, Pole Angle={actual_pole_angle:.2f}")
         print("-" * 30)
+
+        pos_errors.append(prediction[0] - actual_cart_position)
+        angle_errors.append(prediction[1] - actual_pole_angle)
+        steps_collected += 1
+
         action = env.action_space.sample()
         state, _, terminated, truncated, _ = env.step(action)
         done = terminated or truncated
 
     env.close()
     cv2.destroyAllWindows()
+
+    if pos_errors and angle_errors:
+        error_data = {
+            "pos_errors": pos_errors,
+            "angle_errors_deg": list(np.degrees(angle_errors)),
+        }
+        with open("error_metrics.pkl", "wb") as f:
+            pickle.dump(error_data, f)
+        print(f"Saved error distributions to error_metrics.pkl (steps collected: {steps_collected})")
 
 
 
