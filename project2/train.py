@@ -10,7 +10,6 @@ import json
 import shutil
 from torch.utils.tensorboard import SummaryWriter
 import sys
-
 import time
 
 def load_metadata(data_dir):
@@ -70,7 +69,7 @@ class SimpleCNN(nn.Module):
 
         self.shared_fc = nn.Sequential(
             nn.Linear(self.fc_input_features, 120),
-            nn.ReLU()
+            nn.SiLU()
         )
 
         # Head 1: Position
@@ -129,7 +128,7 @@ def train_model(data_dir="data", model_save_path="position_detection.pth", num_e
     dataloader = DataLoader(dataset, batch_size=batch_size)
     model = get_model(input_size=crop_size)
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = optim.AdamW(model.parameters(), lr=learning_rate)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
@@ -167,4 +166,4 @@ def train_model(data_dir="data", model_save_path="position_detection.pth", num_e
     print("TensorBoard logs saved to runs/cartpole_experiment")
 
 if __name__ == '__main__':
-    train_model(num_epochs=10, batch_size=64, learning_rate=5e-4)
+    train_model(num_epochs=100, batch_size=64, learning_rate=1e-4)
