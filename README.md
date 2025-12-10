@@ -52,9 +52,6 @@ finished.
 	Min Episode Length: 500
 ```
 
-## Project 4.5 cartpole: Project 4
-custom environment
-
 ## Project 5 CoC:
 basic CoC with sequence of position state vector, supervised learning
 
