@@ -91,7 +91,7 @@ class Logger:
         print(f"|    loss                 | {stats.get('loss', 0):<12.4f}|")
         print(f"|    n_updates            | {int(stats.get('n_updates', 0)):<12d}|")
         print(f"|    policy_gradient_loss | {stats.get('policy_gradient_loss', 0):<12.4f}|")
-        print(f"|    value_loss           | {statsev.get('value_loss', 0):<12.4f}|")
+        print(f"|    value_loss           | {stats.get('value_loss', 0):<12.4f}|")
         print("------------------------------------------")
 
 

@@ -1,5 +1,7 @@
 import time
-from typing import List, Dict
+import pickle
+import os
+from typing import List, Dict, Optional
 import gymnasium as gym
 import numpy as np
 
@@ -10,7 +12,48 @@ from history_stacker import HistoryStacker, position_angle_from_obs
 def make_env():
     env = gym.make("CartPole-v1")
     env.unwrapped.theta_threshold_radians = np.deg2rad(45.0)
+    env.unwrapped.x_threshold = 1.5
     return env
+
+
+class NoiseInjector:
+    def __init__(self, path="error_metrics.pkl"):
+        if not os.path.exists(path):
+            print(f"Warning: {path} not found. Noise injection disabled.")
+            self.active = False
+            return
+
+        with open(path, "rb") as f:
+            data = pickle.load(f)
+
+        pos_errors = np.array(data.get("pos_errors", []))
+        angle_errors_deg = np.array(data.get("angle_errors_deg", []))
+
+        if len(pos_errors) == 0:
+            self.active = False
+            return
+
+        # Model as Multivariate Normal Distribution
+        self.mean = np.array([np.mean(pos_errors), np.mean(angle_errors_deg)])
+        self.cov = np.cov(pos_errors, angle_errors_deg)
+        self.active = True
+        print(f"Noise Injector initialized using {path}")
+        print(f"Noise Mean: {self.mean}")
+        print(f"Noise Covariance:\n{self.cov}")
+
+    def add_noise(self, obs: np.ndarray) -> np.ndarray:
+        # obs is [pos, angle_rad]
+        if not self.active:
+            return obs
+
+        noise = np.random.multivariate_normal(self.mean, self.cov)
+        # noise is [pos_err, angle_err_deg]
+
+        noisy_obs = obs.copy()
+        noisy_obs[0] += noise[0]
+        noisy_obs[1] += np.deg2rad(noise[1])
+
+        return noisy_obs
 
 
 class TrainingState:
@@ -53,7 +96,8 @@ def collect_rollout(
     stacker: HistoryStacker,
     trainer: PPOTrainer,
     config: TrainConfig,
-    trainingState: TrainingState
+    trainingState: TrainingState,
+    noise_injector: Optional[NoiseInjector] = None
 ) -> List[Transition]:
     transitions: List[Transition] = []
 
@@ -81,9 +125,13 @@ def collect_rollout(
         if done:
             reset_obs, _ = env.reset()
             reset_obs_selected = position_angle_from_obs(reset_obs)
+            if noise_injector:
+                reset_obs_selected = noise_injector.add_noise(reset_obs_selected)
             stacker.reset(reset_obs_selected)
         else:
             next_obs_selected = position_angle_from_obs(next_obs)
+            if noise_injector:
+                next_obs_selected = noise_injector.add_noise(next_obs_selected)
             stacker.append(next_obs_selected, action)
 
         if trainingState.global_step >= config.total_steps:
@@ -95,8 +143,12 @@ def collect_rollout(
 def train(config: TrainConfig = None):
     env = make_env()
 
+    
+    noise_injector = NoiseInjector("error_metrics.pkl")
+
     obs, _ = env.reset()
     obs = position_angle_from_obs(obs)
+    obs = noise_injector.add_noise(obs)
     stacker = HistoryStacker(obs_dim=obs.shape[0], history_len=config.history_len)
     stacker.reset(obs)
 
@@ -108,7 +160,7 @@ def train(config: TrainConfig = None):
 
     while trainingState.global_step < config.total_steps:
         trainingState.iterations += 1
-        transitions = collect_rollout(env, stacker, trainer, config, trainingState)
+        transitions = collect_rollout(env, stacker, trainer, config, trainingState, noise_injector)
         train_stats = trainer.update_weights(transitions)
 
         log_stats = trainingState.get_log_stats()
@@ -121,7 +173,7 @@ def train(config: TrainConfig = None):
 
 if __name__ == "__main__":
     config = TrainConfig(
-        total_steps=200_000,
+        total_steps=800_000,
         rollout_horizon=2048,
         history_len=4,
         lr=3e-4,
