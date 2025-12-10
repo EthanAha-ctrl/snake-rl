@@ -12,6 +12,8 @@ performance:
 ```
 97% position error within: -0.0170 to 0.0204
 97% angle error (deg) within: -1.3026 to 1.6789
+Covariance between position and angle errors: -0.000720
+Correlation between position and angle errors: -0.214530
 ```
 
 ## Project 3 cartpole:
@@ -43,6 +45,12 @@ basic cartpole with sequence of position state vector.
 
 ## Project 4 cartpole:
 basic cartpole with sequence of image-extracted state vector
+finished.
+```
+	Average Episode Length: 500.00
+	Max Episode Length: 500
+	Min Episode Length: 500
+```
 
 ## Project 4.5 cartpole: Project 4
 custom environment
