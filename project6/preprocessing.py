@@ -8,6 +8,7 @@ import pickle
 import sys
 import torch
 import torch.nn.functional as F
+import time
 
 # --- 配置 ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -97,11 +98,25 @@ def main():
     meta_info = []
     global_counter = 0
 
+    start_time = time.time()
+    
+    # Use a single transaction for the entire process, committing periodically
+    # This is a common pattern for large LMDB writes to avoid very large transactions
+    # and to save progress.
     txn = env.begin(write=True)
     try:
         for idx, img_path in enumerate(selected_paths):
             if idx % 10 == 0:
-                print(f"Processing image {idx}/{len(selected_paths)}...")
+                elapsed = time.time() - start_time
+                if idx > 0:
+                    avg_time = elapsed / idx
+                    remaining = (len(selected_paths) - idx) * avg_time
+                    # Format time nicely
+                    rem_h = int(remaining // 3600)
+                    rem_m = int((remaining % 3600) // 60)
+                    print(f"Processing image {idx}/{len(selected_paths)}... ETA: {rem_h}h {rem_m}m")
+                else:
+                    print(f"Processing image {idx}/{len(selected_paths)}...")
 
             try:
                 # 1. CPU Load & Decode
