@@ -287,7 +287,7 @@ class HighResolutionNet(nn.Module):
         self.incre_modules, self.downsamp_modules, \
             self.final_layer = self._make_head(pre_stage_channels)
 
-        self.classifier = nn.Linear(2048, num_classes)
+        self.classifier = nn.Conv2d(8, num_classes, kernel_size=1)
 
     def _make_head(self, pre_stage_channels):
         head_block = Bottleneck
@@ -348,12 +348,12 @@ class HighResolutionNet(nn.Module):
         final_layer = nn.Sequential(
             nn.Conv2d(
                 in_channels=head_channels[3] * head_block.expansion,
-                out_channels=2048,
+                out_channels=8,
                 kernel_size=1,
                 stride=1,
                 padding=0
             ),
-            nn.BatchNorm2d(2048, momentum=BN_MOMENTUM),
+            nn.BatchNorm2d(8, momentum=BN_MOMENTUM),
             nn.ReLU(inplace=True)
         )
 
@@ -496,8 +496,8 @@ class HighResolutionNet(nn.Module):
 
         y = self.final_layer(y)
         
-        # Global Avg Pooling
-        y = F.avg_pool2d(y, kernel_size=y.size()[2:]).view(y.size(0), -1)
+        # Global Avg Pooling - REMOVED for Dense Prediction
+        # y = F.avg_pool2d(y, kernel_size=y.size()[2:]).view(y.size(0), -1)
 
         y = self.classifier(y)
         return y

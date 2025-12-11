@@ -11,6 +11,7 @@ from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import transforms
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from model import get_hrnet_w18
+from torch.utils.tensorboard import SummaryWriter
 
 # --- Configuration ---
 BATCH_SIZE = 64
@@ -72,6 +73,10 @@ class CoCDataset(Dataset):
 def main():
     print(f"Using device: {DEVICE}")
     
+    # TensorBoard Setup
+    writer = SummaryWriter(log_dir=os.path.join(SCRIPT_DIR, 'runs', 'coc_experiment_1'))
+
+    # ... (Dataset & DataLoader Setup)
     # 1. Dataset & Dataloader
     # Simple augmentation: Random brightness/contrast
     # Note: torchvision ColorJitter expects [C, H, W] or PIL
@@ -96,7 +101,7 @@ def main():
                               num_workers=NUM_WORKERS, pin_memory=True, persistent_workers=True)
     val_loader = DataLoader(val_set, batch_size=BATCH_SIZE, shuffle=False, 
                             num_workers=NUM_WORKERS, pin_memory=True, persistent_workers=True)
-    
+
     # 2. Model
     model = get_hrnet_w18(num_classes=50, in_channels=1).to(DEVICE)
     
@@ -121,20 +126,32 @@ def main():
             
             optimizer.zero_grad()
             outputs = model(inputs)
-            loss = criterion(outputs, targets)
+
+            # Expand targets to match output spatial resolution (B, 50, H, W) -> Targets (B, H, W)
+            H, W = outputs.shape[2], outputs.shape[3]
+            targets_expanded = targets.view(-1, 1, 1).expand(-1, H, W)
+
+            loss = criterion(outputs, targets_expanded)
             loss.backward()
             optimizer.step()
             
             train_loss += loss.item() * inputs.size(0)
             _, predicted = outputs.max(1)
-            total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
+            total += targets_expanded.numel() # Total pixels
+            correct += predicted.eq(targets_expanded).sum().item()
             
             if batch_idx % 50 == 0:
                 print(f"Epoch {epoch+1} [{batch_idx}/{len(train_loader)}] Loss: {loss.item():.4f}")
+                # Log batch loss for real-time monitoring
+                current_step = epoch * len(train_loader) + batch_idx
+                writer.add_scalar('Loss/train_batch', loss.item(), current_step)
                 
-        train_loss /= total
+        train_loss /= len(train_loader.dataset)
         train_acc = 100. * correct / total
+        
+        # Log Train Metrics
+        writer.add_scalar('Loss/train', train_loss, epoch)
+        writer.add_scalar('Accuracy/train', train_acc, epoch)
         
         # --- Validate ---
         model.eval()
@@ -143,25 +160,28 @@ def main():
         val_total = 0
         
         with torch.no_grad():
-            for inputs, targets in enumerate(val_loader):
-                # unpack tuple from enumerate: (0, (data, target))? No.
-                # enumerate(loader) yields (idx, batch). 
-                # Wait, validation loop signature:
-                pass
-            
             for inputs, targets in val_loader:
                 inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
                 outputs = model(inputs)
-                loss = criterion(outputs, targets)
+
+                # Expand targets
+                H, W = outputs.shape[2], outputs.shape[3]
+                targets_expanded = targets.view(-1, 1, 1).expand(-1, H, W)
+
+                loss = criterion(outputs, targets_expanded)
                 
                 val_loss += loss.item() * inputs.size(0)
                 _, predicted = outputs.max(1)
-                val_total += targets.size(0)
-                val_correct += predicted.eq(targets).sum().item()
+                val_total += targets_expanded.numel()
+                val_correct += predicted.eq(targets_expanded).sum().item()
                 
-        val_loss /= val_total
+        val_loss /= len(val_loader.dataset)
         val_acc = 100. * val_correct / val_total
         
+        # Log Val Metrics
+        writer.add_scalar('Loss/val', val_loss, epoch)
+        writer.add_scalar('Accuracy/val', val_acc, epoch)
+
         # Scheduler
         scheduler.step()
         
@@ -178,6 +198,8 @@ def main():
             
         # Save Last
         torch.save(model.state_dict(), os.path.join(SAVE_DIR, "last_model.pth"))
+    
+    writer.close()
 
 if __name__ == "__main__":
     main()
