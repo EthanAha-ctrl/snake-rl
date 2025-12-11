@@ -1,72 +1,81 @@
+import time
 import numpy as np
 import torch
-import my_gym
+from typing import List, Dict
 
-from history_stacker import HistoryStacker
-from ppo_trainer import ActorCritic
+from sac_trainer import SACConfig, SACTrainer
+from history_stacker import HistoryStacker, position_angle_from_obs
 from coc_env import CoCEnv
 
-history_len = 4
-use_random_action = False  # True = random actions, False = model actions
-render_mode = "human"
+def make_env():
+    return CoCEnv(render_mode="human")
 
-env = CoCEnv(render_mode=render_mode)
+def load_model(config, input_dim, action_dim):
+    trainer = SACTrainer(config, obs_dim=input_dim, action_dim=action_dim)
+    trainer.load("sac_coc.pth")
+    return trainer
 
-obs, _ = env.reset()
+def evaluate():
+    config = SACConfig() # defaults are fine for eval
+    env = make_env()
 
-# Obs dim for CoC is 1 (Box(1))
-obs_dim = 1
-if hasattr(env.observation_space, 'shape'):
-    obs_dim = env.observation_space.shape[0]
+    obs_dim = 1
+    if hasattr(env.observation_space, 'shape'):
+        obs_dim = env.observation_space.shape[0]
+        
+    # CoC specific: continuous action
+    action_dim = 1
+    if hasattr(env.action_space, 'shape'):
+         action_dim = env.action_space.shape[0]
 
-stacker = HistoryStacker(obs_dim=obs_dim, history_len=history_len)
-stacker.reset(obs)
-
-stacked_dim = obs_dim * history_len + history_len
-
-# Determine Action Dim and Continuous Flag
-is_continuous = isinstance(env.action_space, my_gym.Box)
-action_dim = 1 if is_continuous else env.action_space.n
-if is_continuous and hasattr(env.action_space, 'shape'):
-     action_dim = env.action_space.shape[0]
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = ActorCritic(input_dim=stacked_dim, action_dim=action_dim, is_continuous=is_continuous).to(device)
-
-try:
-    state_dict = torch.load("ppo_coc.pth", map_location=device)
-    model.load_state_dict(state_dict)
-    print("Loaded model from ppo_coc.pth")
-except FileNotFoundError:
-    print("Warning: ppo_coc.pth not found, using random weights")
-
-model.eval()
-
-for step in range(100):
-    stacked_obs = torch.as_tensor(stacker.stacked(), dtype=torch.float32, device=device)
+    history_len = 10 
     
-    if use_random_action:
-        action = env.action_space.sample()
-    else:
-        with torch.no_grad():
-            dist, _ = model(stacked_obs)
-            if is_continuous:
-                # For continuous, usually use mean for deterministic eval
-                action_tensor = dist.mean
-                action = action_tensor.item()
-            else:
-                action = dist.probs.argmax().item()
+    # Input dim for network logic matches train.py: history_len * (obs_dim + action_dim)
+    input_dim = history_len * (obs_dim + action_dim)
+
+    trainer = load_model(config, input_dim, action_dim)
+    
+    stacker = HistoryStacker(obs_dim=obs_dim, history_len=history_len)
+    
+    obs, _ = env.reset()
+    stacker.reset(obs, default_obs=-1.0, default_action=-1.0)
+
+    for i in range(10):  # Run 10 episodes
+        terminated = False
+        truncated = False
+        total_reward = 0
+        step = 0
+        
+        # We need ground truth access for printing debug info if available
+        ground_truth = env.ground_truth if hasattr(env, 'ground_truth') else None
+        print(f"\n--- Episode {i+1} Start. GT: {ground_truth} ---")
+
+        while not (terminated or truncated):
+            env.render()
             
-    next_obs, reward, terminated, truncated, info = env.step(action)
-    print(f"Step: {step}, Ground Truth: {env.ground_truth:.4f}, Action: {action:.4f}, Diff: {next_obs[0]:.4f}, Reward: {reward}")
-    
-    env.render()
-    
-    if terminated or truncated:
-        print("--- Episode Done ---")
-        next_obs, _ = env.reset()
-        stacker.reset(next_obs)
-    else:
-        stacker.append(next_obs, action)
+            # Predict
+            stacked_obs = stacker.stacked()
+            action = trainer.select_action(stacked_obs, evaluate=True)
+            
+            # Step
+            next_obs, reward, terminated, truncated, _ = env.step(action)
+            total_reward += reward
+            step += 1
+            
+            print(f"Step: {step}, Action: {action}, Diff: {next_obs[0]}, Reward: {reward}")
 
-env.close()
+            if terminated or truncated:
+                print("--- Episode Done ---")
+                next_obs, _ = env.reset()
+                stacker.reset(next_obs, default_obs=-1.0, default_action=-1.0)
+            else:
+                stacker.append(next_obs, float(action))
+
+            time.sleep(0.05)
+
+        print(f"Episode {i+1} Reward: {total_reward}")
+
+    env.close()
+
+if __name__ == "__main__":
+    evaluate()

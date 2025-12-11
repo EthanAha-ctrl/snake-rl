@@ -15,15 +15,18 @@ class HistoryStacker:
         self.obs_history: Deque[np.ndarray] = deque(maxlen=history_len)
         self.action_history: Deque[float] = deque(maxlen=history_len)
 
-    def reset(self, initial_obs: np.ndarray):
+    def reset(self, initial_obs: np.ndarray, default_obs: float = 0.0, default_action: float = 0.0):
         self.obs_history.clear()
         self.action_history.clear()
-        zero_obs = np.zeros(self.obs_dim, dtype=np.float32)
+        
+        # Use default_obs value but respect obs_dim shape
+        zero_obs = np.full(self.obs_dim, default_obs, dtype=np.float32)
+        
         for _ in range(self.history_len - 1):
             self.obs_history.append(zero_obs)
-            self.action_history.append(0.0)
+            self.action_history.append(float(default_action))
         self.obs_history.append(initial_obs.astype(np.float32))
-        self.action_history.append(0.0)
+        self.action_history.append(float(default_action))
 
     def append(self, obs: np.ndarray, action: float):
         self.obs_history.append(obs.astype(np.float32))
