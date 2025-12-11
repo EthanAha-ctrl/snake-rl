@@ -71,6 +71,9 @@ Well trained. Well performs. The `evalute.py` shows optimal policy.
 
 
 ## Project 6 CoC: Project 3
+image source:
+`https://www.tommackie.com/blog/10-top-landscape-locations-in-the-usa`
+
 basic CoC with sequence of position state vector, RL
 
 ## Project 7 CoC:
