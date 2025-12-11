@@ -53,7 +53,22 @@ finished.
 ```
 
 ## Project 5 CoC:
-basic CoC with sequence of position state vector, supervised learning
+Well trained. Well performs. The `evalute.py` shows optimal policy.
+```
+------------------------------------------
+| train/                  |             |
+|    ep_len_mean          | 1.8000      |
+|    ep_rew_mean          | 9.3800      |
+|    fps                  | 105.0000    |
+|    iterations           | 0.0000      |
+|    time_elapsed         | 472.4670    |
+|    total_timesteps      | 50000.0000  |
+|    loss_q               | 23.9323     |
+|    loss_pi              | -4.6759     |
+|    alpha                | 0.1210      |
+------------------------------------------
+```
+
 
 ## Project 6 CoC: Project 3
 basic CoC with sequence of position state vector, RL
