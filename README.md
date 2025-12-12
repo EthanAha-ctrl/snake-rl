@@ -79,6 +79,18 @@ basic CoC with sequence of position state vector, RL
 ## Project 7 CoC:
 feature extractor, supervised learning
 
+Baseline HRNet:
+
+![alt text][Hrnet]
+
+[Hrnet]: https://github.com/EthanAha-ctrl/snake-rl/blob/main/project7/cls-hrnet.png "HRNet"
+
+Modified HRNet:
+
+![alt text][Arch]
+
+[Arch]: https://github.com/EthanAha-ctrl/snake-rl/blob/main/project7/arch.png "Arch"
+
 ```
 Epoch 2 [7000/7032] Loss: 0.1298
 Epoch 2/2 | Time: 4158.7s
@@ -89,7 +101,7 @@ Saved Best Model (Acc: 98.23%)
 
 ![alt text][loss]
 
-[loss]: https://github.com/EthanAha-ctrl/snake-rl/blob/main/project6/Screenshot%20From%202025-12-11%2019-25-25.png "Tensorboard"
+[loss]: https://github.com/EthanAha-ctrl/snake-rl/blob/main/project7/Screenshot%20From%202025-12-11%2019-25-25.png "Tensorboard"
 
 
 
