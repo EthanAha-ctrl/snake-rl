@@ -127,19 +127,11 @@ def main():
     print("-------------------------------------------------------")
 
     for ep in range(n_episodes):
-        # Reset Env
-        # Note: We ignore the initial obs from env.reset(), 
-        # and instead immediately use the vision extractor on the initial frame.
         _ = env.reset()
         
-        # Capture Initial Frame & Process
         frame = env.render() # Returns RGB Array (actually BGR if cv2 used underneath without conversion, check env)
-        # coc_env.render returns 'convolved_image' which is from cv2.imread => BGR.
-        
-        # Vision Inference
         vision_obs = extractor.predict(frame)
         
-        # Reset Stacker with Vision Obs
         stacker.reset(vision_obs, default_obs=-1.0, default_action=-1.0)
         
         ep_reward = 0
@@ -148,34 +140,21 @@ def main():
         truncated = False
         
         while not (terminated or truncated):
-            # 1. Get Stacked State
             current_stacked_obs = stacker.stacked()
-            
-            # 2. Select Action (Deterministic)
-            # SAC select_action expects numpy array
             action = trainer.select_action(current_stacked_obs, evaluate=True)
             
-            # 3. Step Environment
-            # Action is [0, 1] from SAC (if handled by wrapper) or [-1, 1].
-            # In project5/sac_trainer.py select_action scales it to [0, 1].
-            # env.step expects float or array
             next_real_obs, reward, terminated, truncated, _ = env.step(action)
-            
-            # 4. Get Visual Feedback for Next State
             frame = env.render()
             next_vision_obs = extractor.predict(frame)
             
-            # Debug print
-            # print(f"Step {steps}: Act={action[0]:.3f}, Real Diff={next_real_obs[0]:.3f}, Vis Diff={next_vision_obs[0]:.3f}")
+            print(f"Step {steps}: Act={action[0]:.3f}, Real Diff={next_real_obs[0]:.3f}, Vis Diff={next_vision_obs[0]:.3f}")
             
-            # 5. Update Stacker
             # IMPORTANT: We use action[0] because select_action returns array
             stacker.append(next_vision_obs, action[0])
             
             ep_reward += reward
             steps += 1
             
-            # Visual rendering for User (Optional, slows down)
             cv2.imshow("Visual Agent Evaluation", frame)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 terminated = True # Force quit
