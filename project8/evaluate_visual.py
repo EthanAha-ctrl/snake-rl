@@ -54,12 +54,21 @@ class VisionExtractor:
             # Global Average of logits/probabilities
             # (Matches project7/evaluate.py logic: mean over spatial dims)
             logits_avg = output.mean(dim=(2, 3)) 
-            pred_idx = logits_avg.argmax(1).item() # 0-49
-
-        # 4. Convert Class Index to Physical Quantity
-        # Class 0 -> Radius 1
-        # Class 49 -> Radius 50
-        pred_radius = pred_idx + 1
+            
+            # --- START: Soft Expectation (Idea 1.5) ---
+            # Instead of argmax, we use the weighted average of probabilities
+            probabilities = torch.softmax(logits_avg, dim=1) # [1, 50]
+            
+            # Create a tensor of class values [1.0, 2.0, ..., 50.0]
+            # Since pred_idx 0 corresponds to Radius 1
+            class_values = torch.arange(1, 51, device=self.device, dtype=torch.float32).unsqueeze(0)
+            
+            # Expected Radius = Sum(Prob * Value)
+            expected_radius = (probabilities * class_values).sum(dim=1).item()
+            # print(f"DEBUG: Soft Radius: {expected_radius:.4f}")
+            
+            pred_radius = expected_radius
+            # --- END: Soft Expectation ---
         
         # 5. Convert Radius to Diff
         # In coc_env.py: radius = last_diff * 10
