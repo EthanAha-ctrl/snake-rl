@@ -52,7 +52,9 @@ finished.
 	Min Episode Length: 500
 ```
 
-## Project 5 CoC:
+## Project 5 CoC: Project 3
+basic CoC with sequence of position state vector, RL
+
 Well trained. Well performs. The `evalute.py` shows optimal policy.
 ```
 ------------------------------------------
@@ -70,14 +72,14 @@ Well trained. Well performs. The `evalute.py` shows optimal policy.
 ```
 
 
-## Project 6 CoC: Project 3
+## Project 6 CoC
+basic CoC with render()
+
 image source:
 `https://www.tommackie.com/blog/10-top-landscape-locations-in-the-usa`
 
-basic CoC with sequence of position state vector, RL
-
-## Project 7 CoC:
-feature extractor, supervised learning
+## Project 7 CoC: Project 2
+CoC feature extractor, supervised learning
 
 Baseline HRNet:
 
@@ -104,13 +106,10 @@ Saved Best Model (Acc: 98.23%)
 [loss]: https://github.com/EthanAha-ctrl/snake-rl/blob/main/project7/Screenshot%20From%202025-12-11%2019-25-25.png "Tensorboard"
 
 
-
-## Project 8 CoC: Project 5
-Image-extracted defocus distance, supervised learning
-
-## Project 9 CoC: Project 6
+## Project 8 CoC: Project 4
 input: video sequence
+
 pass 1: feature extractor - supervised learning
-pass 2: action control - supervised learning
-pass 3: action control - RL
+
+pass 2: action control
 	
