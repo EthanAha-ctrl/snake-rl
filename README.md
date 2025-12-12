@@ -79,6 +79,20 @@ basic CoC with sequence of position state vector, RL
 ## Project 7 CoC:
 feature extractor, supervised learning
 
+```
+Epoch 2 [7000/7032] Loss: 0.1298
+Epoch 2/2 | Time: 4158.7s
+Train Loss: 0.3256 | Acc: 93.68%
+Val   Loss: 0.1004 | Acc: 98.23%
+Saved Best Model (Acc: 98.23%)
+```
+
+![alt text][loss]
+
+[loss]: https://github.com/EthanAha-ctrl/snake-rl/blob/main/project6/Screenshot%20From%202025-12-11%2019-25-25.png "Tensorboard"
+
+
+
 ## Project 8 CoC: Project 5
 Image-extracted defocus distance, supervised learning
 
