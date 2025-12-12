@@ -15,7 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 # --- Configuration ---
 BATCH_SIZE = 64
-NUM_EPOCHS = 30
+NUM_EPOCHS = 2
 LEARNING_RATE = 2e-4
 WEIGHT_DECAY = 1e-2
 NUM_WORKERS = 8
