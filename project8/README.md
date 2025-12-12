@@ -1,4 +1,5 @@
 [Person]
+
 运行了. inference performance 非常差. 我看下来是有rounding error. 非常有意思 .
 有两个思路来改善这个问题.
 思路1:
@@ -8,7 +9,11 @@
 just tell me about your thoughts.
 
 
+
+
+
 [Gemini 3 Pro High]
+
 您的分析非常精准。您遇到的问题本质上是分类任务带来的量化误差 (Quantization Error / Rounding Error)。因为 HRNet 目前被训练为输出 50 个离散类别（Radius 1, 2, ... 50），它天然地丢失了类别之间的精细信息（比如 Radius 1.5）。
 
 关于您的两个思路，我的看法如下：
@@ -38,11 +43,15 @@ SAC 的输入维度会暴增（从 1 维变成 2400 维），训练难度和时�
 
 如果思路 1.5 依然无法满足精度要求，那么我会全力支持您实施 思路 2，因为它才是解决纯视觉精细控制的终极方案。
 
+
+
+
 [Person]
+
 BTW, FYI:
 
 Starting Visual Evaluation for 10 episodes...
--------------------------------------------------------
+
 Step 0: Act=0.095, Real Diff=0.069, Vis Diff=0.100
 Warning: Ignoring XDG_SESSION_TYPE=wayland on Gnome. Use QT_QPA_PLATFORM=wayland to run on Wayland anyway.
 Episode 1: Steps=1, Reward=8.90
@@ -70,9 +79,13 @@ Episode 9: Steps=1, Reward=8.90
 Step 0: Act=0.095, Real Diff=0.324, Vis Diff=0.300
 Step 1: Act=0.393, Real Diff=0.026, Vis Diff=0.100
 Episode 10: Steps=2, Reward=9.50
--------------------------------------------------------
+
+
+
+
 
 [Gemini 3 Pro High]
+
 Step Id: 91 这个 Log 非常有意思，完美印证了“盲区”的问题：
 
 Vis Diff 被锁死在 0.100:
