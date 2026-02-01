@@ -1,0 +1,155 @@
+    1  exit
+    2  sudo dnf upgrade
+    3  sudo dnf install akmod-nvidia
+    4  sudo dnf install xorg-x11-drv-nvidia-cuda
+    5  sudo reboot
+    6  cd ~/Downloads/
+    7  wget https://developer.download.nvidia.com/compute/cuda/13.0.2/local_installers/cuda_13.0.2_580.95.05_linux.run
+    8  ls
+    9  chmod +x ./cuda_13.0.2_580.95.05_linux.run 
+   10  sudo ./cuda_13.0.2_580.95.05_linux.run 
+   11  cat /var/log/cuda-installer.log 
+   12  sudo 
+   13  sudo ./cuda_13.0.2_580.95.05_linux.run 
+   14  cat /var/log/cuda-installer.log 
+   15  cat /var/log/nvidia-installer.log 
+   16  exit
+   17  modinfo -F version nvidia
+   18  nvidia-smi
+   19  gemini
+   20  npm 
+   21  npm install -g @google/gemini-cli
+   22  sudo npm install -g @google/gemini-cli
+   23  gemini
+   24  mkdir Workspace
+   25  git clone https://github.com/EthanAha-ctrl/snake-rl.git
+   26  cd snake-rl/
+   27  gemini
+   28  pip install uv
+   29  python -m pip install upgrade
+   30  python -m pip3
+   31  python3
+   32  python3 -m pip
+   33  python3 -m pip3
+   34  python -m ensurepip
+   35  pip
+   36  python -m pip
+   37  python -m pip install uv
+   38  python -m pip install --upgrade pip
+   39  pip
+   40  uv
+   41  gemini
+   42  source venvsnk/bin/activate
+   43  pip list
+   44  gemini
+   45  nvcc
+   46  nvidia-smi
+   47  exit
+   48  cd Downloads/
+   49  ls
+   50  sudo ./cuda_13.0.2_580.95.05_linux.run 
+   51  cat /var/log/cuda-installer.log 
+   52  cat /var/log/nvidia-installer.log cuda_13.0.2_580.95.05_linux.run 
+   53  exit
+   54  sudo reboot
+   55  sudo systemctl stop gdm
+   56  nvidia-smi
+   57  cd Downloads/
+   58  ls
+   59  sudo ./cuda_13.0.2_580.95.05_linux.run 
+   60  cd ..
+   61  vim
+   62  vimvim
+   63  vim  ./~.exit
+   64  exit
+   65  vim ./.bashrc
+   66  source ./.bashrc 
+   67  nvcc
+   68  nvcc --version
+   69  cd Workspace/
+   70  ls
+   71  cd ..
+   72  ls
+   73  mv snake-rl Workspace/
+   74  cd Workspace/
+   75  cd snake-rl/
+   76  ls
+   77  source venvsnk/bin/activate
+   78  pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+   79  python
+   80  python --version
+   81  gemini
+   82  python
+   83  gemini
+   84  pip install stable-baselines3[extra]
+   85  pip install stable-baselines3[extra]sudo dnf install SDL2-devel
+   86  sudo dnf install SDL2-devel
+   87  pip install stable-baselines3[extra]
+   88  sudo dnf groupinstall "Development Tools"
+   89  sudo dnf group install "Development Tools"
+   90  sudo dnf group install "development-tools"
+   91  pip install stable-baselines3[extra]
+   92  g++
+   93  clang++
+   94  pip install stable-baselines3[extra]
+   95  pip install numpy=2.0
+   96  pip install numpy==2.0
+   97  pip install pypy-dev
+   98  pip install python-dev
+   99  pip install numpy
+  100  pip install numpy==2.0
+  101  pip install numpy==2.20
+  102  pip install numpy==2.0.0
+  103  pip install numpy==2.1.0
+  104  pip install stable-baselines3[extra]
+  105  pip install stable-baselines3[extra] --no-deps
+  106  touch test_env.py
+  107  gedit test_env.py 
+  108  python test_env.py 
+  109  pip install gymnasium
+  110  pip install matplotlib
+  111  pip install pandas --no-deps
+  112  python test_env.py 
+  113  pip install pytz --no-deps
+  114  python test_env.py 
+  115  pip install pygame --no-deps
+  116  pip install uv --upgrade
+  117  python
+  118  cd [200~/usr/lib/python3.14/~
+  119  CD /usr/lib/python3.14/
+  120  cd /usr/lib/python3.14/
+  121  pwd
+  122  ls
+  123  cd site-packages/
+  124  ls
+  125  cd ../..
+  126  cd 
+  127  cd Workspace/
+  128  cd snake-rl/
+  129  sudo dnf install python-dev
+  130  which python
+  131  sudo dnf install python3-devel
+  132  pip install pygame --no-deps
+  133  python test_env.py 
+  134  pip install opencv-python
+  135  pip install tzdata==2022.7
+  136  python test_env.py 
+  137  open .
+  138  files .
+  139  Files .
+  140  file .
+  141  file
+  142  ls
+  143  test_env2.py
+  144  vim test_env_with_torch.py
+  145  python test_env_with_torch.py 
+  146  exit
+  147  nvidia-smi -S 1
+  148  nvidia-smi -L 1
+  149  nvidia-smi 
+  150  nvidia-smi -l 1
+  151  exit
+  152  ls
+  153  cd Workspace/
+  154  cd snake-rl/
+  155  history > command_line_to_sb3.txt
