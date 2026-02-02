@@ -95,18 +95,20 @@ class CoCEnv(my_gym.Env):
                 r_trigger += 1.0
         else:
             if self.reached == True:
-                # once reached before
-                if action == False:
-                    r_trigger += 1.0
-                    terminated = True
-                else:
-                    r_trigger = -10.0
+                pass
             else:
                 # just reached for the first time
                 if action == False:
                     r_trigger -= (self.current_step * self.current_step)
                 else:
                     r_trigger += 1.0
+
+        if self.reached == True:
+            if action == False:
+                r_trigger += 1.0
+                terminated = True
+            else:
+                r_trigger = -10.0
 
         if self.is_first_trial == True:
             self.is_first_trial = False
