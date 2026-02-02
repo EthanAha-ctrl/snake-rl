@@ -29,12 +29,13 @@ class CoCEnv(my_gym.Env):
             dtype=np.float32
         )
         
-        self.ground_truth = 0.0
+        self.ground_truth = np.random.uniform(self.min_val, self.max_val)
         self.max_steps = 10
         self.current_step = 0
-        self.target_step = 0
+        self.target_step = np.random.uniform(self.min_val, self.max_val)
         self.diff_threshold = (self.max_val - self.min_val) / self.max_steps
         self.reached = False
+        self.is_first_trial = True
 
     def reset(self, seed=None, options=None):
         if seed is not None:
@@ -42,10 +43,11 @@ class CoCEnv(my_gym.Env):
             
         self.ground_truth = np.random.uniform(self.min_val, self.max_val)
         self.current_step = 0
-        self.target_step = 0
+        self.target_step = np.random.uniform(self.min_val, self.max_val)
         self.prev_diff = abs(self.target_step - self.ground_truth)
         self.reached = False
-        return np.array([self.prev_diff], dtype=np.float32), {}
+        self.is_first_trial = True
+        return np.array([max(0.0, min(1.0, np.random.normal(self.prev_diff, 0.01)))], dtype=np.float32), {}
 
     def step(self, command):
         if isinstance(command, np.ndarray):
@@ -106,6 +108,10 @@ class CoCEnv(my_gym.Env):
                 else:
                     r_trigger += 1.0
 
+        if self.is_first_trial == True:
+            self.is_first_trial = False
+            r_guess = 0.1
+
         self.prev_diff = absolute_diff
         
         total_reward = np.array([r_guess, r_trigger], dtype=np.float32)
@@ -113,7 +119,7 @@ class CoCEnv(my_gym.Env):
         if absolute_diff < self.diff_threshold:
             self.reached = True
 
-        return np.array([absolute_diff], dtype=np.float32), total_reward, terminated, False, {}
+        return np.array([max(0.0, min(1.0, np.random.normal(absolute_diff, 0.01)))], dtype=np.float32), total_reward, terminated, False, {}
 
     def render(self):
         if self.render_mode == "rgb_array":

@@ -408,7 +408,7 @@ class Logger:
                  # Vector handling
                  v_arr = np.array(v).flatten()
                  for i, val in enumerate(v_arr):
-                     print(f"|    {k}_{i:<18} | {val:<12.4f}|")
+                     print(f"|    {k}_{i:<8} | {val:<12.4f}|")
              else:
                  # Scalar handling
                  if hasattr(v, 'item'):

@@ -151,7 +151,7 @@ def train(config: SACConfig = None):
 
 if __name__ == "__main__":
     config = SACConfig(
-        total_steps=20_000,
+        total_steps=50_000,
         start_steps=5000, # Warmup random
         history_len=10,
         lr=3e-4,
