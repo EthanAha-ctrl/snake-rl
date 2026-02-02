@@ -57,16 +57,18 @@ def train(config: SACConfig = None):
     if hasattr(env.observation_space, 'shape'):
         obs_dim = env.observation_space.shape[0]
 
-    stacker = HistoryStacker(obs_dim=obs_dim, history_len=config.history_len)
+    # CoC Action dim is likely 2 now
+    action_dim = 1
+    if hasattr(env.action_space, 'shape'):
+         action_dim = env.action_space.shape[0]
+
+    stacker = HistoryStacker(obs_dim=obs_dim, action_dim=action_dim, history_len=config.history_len)
     stacker.reset(obs, default_obs=-1.0, default_action=-1.0)
     
     # Obs Dim in Buffer/Network = Stacked Dim
     # (obs_dim + action_dim) * history_len
-    # Wait, SACTrainer takes input_dim
-    # CoC Action dim is 1
-    action_dim = 1
     
-    input_dim = obs_dim * config.history_len + config.history_len # 10 * (1+1) = 20
+    input_dim = obs_dim * config.history_len + action_dim * config.history_len
     
     trainer = SACTrainer(config, obs_dim=input_dim, action_dim=action_dim)
     trainingState = TrainingState()
@@ -82,13 +84,6 @@ def train(config: SACConfig = None):
         if trainingState.global_step < config.start_steps:
             # Random exploration
             action = env.action_space.sample()
-            # Ensure it's float numpy array if needed, but sample() usually correct
-            # CoC action is Box(1), sample returns np.array([0.123])
-            # If env.action_space is Discrete, we have problems. But CoC is Box.
-            if isinstance(action, np.ndarray):
-                action = action.astype(np.float32)
-            else:
-                action = np.array([action], dtype=np.float32)
         else:
             action = trainer.select_action(current_stacked_obs, evaluate=False)
             
@@ -121,12 +116,7 @@ def train(config: SACConfig = None):
         # We need the state BEFORE update as 'current_obs' (we have it: current_stacked_obs)
         # We need state AFTER update as 'next_obs'
         
-        if isinstance(action, np.ndarray) and action.ndim > 0:
-            action_scalar = action.item()
-        else:
-            action_scalar = float(action)
-            
-        stacker.append(next_obs, action_scalar) 
+        stacker.append(next_obs, action) 
         next_stacked_obs = stacker.stacked()
         
         # 4. Add to Buffer
@@ -161,7 +151,7 @@ def train(config: SACConfig = None):
 
 if __name__ == "__main__":
     config = SACConfig(
-        total_steps=50_000,
+        total_steps=20_000,
         start_steps=5000, # Warmup random
         history_len=10,
         lr=3e-4,

@@ -48,7 +48,7 @@ class ReplayBuffer:
         self.obs = torch.zeros((capacity, obs_dim), dtype=torch.float32, device=device)
         self.next_obs = torch.zeros((capacity, obs_dim), dtype=torch.float32, device=device)
         self.actions = torch.zeros((capacity, action_dim), dtype=torch.float32, device=device)
-        self.rewards = torch.zeros((capacity, 1), dtype=torch.float32, device=device)
+        self.rewards = torch.zeros((capacity, 2), dtype=torch.float32, device=device)
         self.dones = torch.zeros((capacity, 1), dtype=torch.float32, device=device)
 
     def add(self, obs, action, reward, next_obs, done):
@@ -56,7 +56,7 @@ class ReplayBuffer:
         self.obs[self.ptr] = torch.as_tensor(obs, device=self.device)
         self.next_obs[self.ptr] = torch.as_tensor(next_obs, device=self.device)
         self.actions[self.ptr] = torch.as_tensor(action, device=self.device)
-        self.rewards[self.ptr] = reward
+        self.rewards[self.ptr] = torch.as_tensor(reward, device=self.device)
         self.dones[self.ptr] = float(done)
         
         self.ptr = (self.ptr + 1) % self.capacity
@@ -77,46 +77,97 @@ class ReplayBuffer:
 class Critic(nn.Module):
     def __init__(self, obs_dim, action_dim, hidden_dim):
         super().__init__()
-        # We usually use Double Q-Learning in SAC (two critics)
-        self.q1 = nn.Sequential(
+        # We use Double Q-Learning (Two independent Critics: Q1 and Q2)
+        
+        # --- Q1 Network ---
+        self.shared_net_1 = nn.Sequential(
             nn.Linear(obs_dim + action_dim, hidden_dim),
-            nn.SiLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.SiLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.SiLU(),
-            nn.Linear(hidden_dim, hidden_dim),
             nn.SiLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.SiLU()
         )
-        self.q2 = nn.Sequential(
+        # Tower 1: Guess Q-Value
+        self.guess_net_1 = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, 1) # Scalar Q_guess
+        )
+        # Tower 2: Trigger Q-Value
+        self.trigger_net_1 = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, 1) # Scalar Q_trigger
+        )
+
+        # --- Q2 Network ---
+        self.shared_net_2 = nn.Sequential(
             nn.Linear(obs_dim + action_dim, hidden_dim),
             nn.SiLU(),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.SiLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.SiLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.SiLU(),
-            nn.Linear(hidden_dim, hidden_dim),
             nn.SiLU()
+        )
+        # Tower 1: Guess Q-Value
+        self.guess_net_2 = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, 1)
+        )
+        # Tower 2: Trigger Q-Value
+        self.trigger_net_2 = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, 1)
         )
 
     def forward(self, obs, action):
         xu = torch.cat([obs, action], dim=1)
-        return self.q1(xu), self.q2(xu)
+        
+        # Q1 Forward
+        feat1 = self.shared_net_1(xu)
+        q1_guess = self.guess_net_1(feat1)
+        q1_trigger = self.trigger_net_1(feat1)
+        q1 = torch.cat([q1_guess, q1_trigger], dim=1) # (B, 2)
+
+        # Q2 Forward
+        feat2 = self.shared_net_2(xu)
+        q2_guess = self.guess_net_2(feat2)
+        q2_trigger = self.trigger_net_2(feat2)
+        q2 = torch.cat([q2_guess, q2_trigger], dim=1) # (B, 2)
+        
+        return q1, q2
 
 # Actor: pi(s) -> action distribution (Mean, Std)
 # We use TanhGaussianPolicy
 class Actor(nn.Module):
     def __init__(self, obs_dim, action_dim, hidden_dim, log_std_min=-20, log_std_max=2):
         super().__init__()
-        self.fc = nn.Sequential(
+        
+        # 1. Shared Base (Low-level feature extraction)
+        self.shared_net = nn.Sequential(
             nn.Linear(obs_dim, hidden_dim),
             nn.SiLU(),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.SiLU(),
+            nn.SiLU()
+        )
+        
+        # 2. Continuous Branch (Guess) - Dedicated MLP Tower
+        self.guess_net = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.SiLU(),
             nn.Linear(hidden_dim, hidden_dim),
@@ -124,52 +175,88 @@ class Actor(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.SiLU()
         )
-        self.mean_head = nn.Linear(hidden_dim, action_dim)
-        self.log_std_head = nn.Linear(hidden_dim, action_dim)
+        self.guess_mean = nn.Linear(hidden_dim, 1)
+        self.guess_log_std = nn.Linear(hidden_dim, 1)
+        
+        # 3. Discrete Branch (Trigger) - Dedicated MLP Tower
+        self.trigger_net = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU()
+        )
+        self.trigger_logits = nn.Linear(hidden_dim, 2)
         
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max
 
     def forward(self, obs):
-        x = self.fc(obs)
-        mean = self.mean_head(x)
-        log_std = self.log_std_head(x)
+        # Shared features
+        shared_feat = self.shared_net(obs)
+        
+        # Continuous Path
+        x_guess = self.guess_net(shared_feat)
+        mean = self.guess_mean(x_guess)
+        log_std = self.guess_log_std(x_guess)
         log_std = torch.clamp(log_std, self.log_std_min, self.log_std_max)
         std = torch.exp(log_std)
-        return mean, std
+        
+        # Discrete Path
+        x_trigger = self.trigger_net(shared_feat)
+        logits = self.trigger_logits(x_trigger)
+        
+        return mean, std, logits
         
     def sample(self, obs):
-        mean, std = self(obs)
+        mean, std, logits = self(obs)
+        
+        # --- 1. Continuous Handling (Sigmoid Flow) ---
         normal = torch.distributions.Normal(mean, std)
-        x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
-        y_t = torch.tanh(x_t)   # Squash to [-1, 1]
+        x_t = normal.rsample()  # Reparameterization
         
-        action = y_t
-        # Enforce action bounds if needed? In this Env it's [0, 1].
-        # Tanh outputs [-1, 1]. We need to scale to [0, 1].
-        # scale: (action + 1) / 2
-        action = (action + 1) / 2.0
+        # Apply Sigmoid to squash to (0, 1) instead of Tanh
+        guess = torch.sigmoid(x_t)
         
-        # Log prob calculation correction for Tanh squash
-        # log_prob = log_prob_normal - sum(log(1 - tanh(x)^2))
-        log_prob = normal.log_prob(x_t)
-        # Correction formula: log(1 - tanh(x)^2 + epsilon)
-        # But we also sticked a linear transform (x+1)/2 after tanh.
-        # Let's derive: y = (tanh(x) + 1)/2. 
-        # We need log_det_jacobian.
-        # This is getting complex mathematically. 
-        # Standard SAC assumes action in [-1, 1].
-        # Easiest way: Let the Env wrapper handle scaling [-1, 1] -> [0, 1].
-        # And keep Actor outputting [-1, 1].
+        # Log Prob correction for Sigmoid:
+        # log_prob(y) = log_prob(x) - log(dy/dx)
+        # dy/dx for sigmoid(x) is sigmoid(x)*(1-sigmoid(x)) = y*(1-y)
+        # log(dy/dx) = log(y) + log(1-y)
+        log_prob_cont = normal.log_prob(x_t)
+        log_prob_cont -= torch.log(guess * (1.0 - guess) + 1e-6)
+        log_prob_cont = log_prob_cont.sum(1, keepdim=True)
         
-        # WAIT: For this implementation, let's stick to standard SAC outputting [-1, 1].
-        # And we perform unwrapping in the Trainer.predict or Environment Step.
+        # --- 2. Discrete Handling (Gumbel Softmax) ---
+        # Gumbel-Softmax returns a differentiable ONE-HOT approximator
+        # shape: (batch, 2)
+        trigger_one_hot = F.gumbel_softmax(logits, tau=1.0, hard=False)
         
-        # Standard correction for Tanh
-        log_prob -= torch.log(1 - y_t.pow(2) + 1e-6)
-        log_prob = log_prob.sum(1, keepdim=True)
+        # We need the scalar value for the 2nd dimension of action (the 'True' probability)
+        # The env interprets value > 0.5 as True.
+        # trigger_one_hot[:, 1] is the probability of being True.
+        trigger_val = trigger_one_hot[:, 1].unsqueeze(1)
         
-        return action, log_prob, y_t # Return y_t (tanh output) as raw action [-1, 1]
+        # Log Prob for Discrete
+        # For SAC, we usually use the log probability of the sampled class.
+        # With Gumbel Softmax, we can use the Softmax probability.
+        probs = F.softmax(logits, dim=-1)
+        # We approximate log_pi as sum(prob * log_prob) (Entropy) or just log(prob_selected)
+        # To keep it consistent with "sampled action", let's use the log prob of the class distribution
+        # However, since trigger_val is continuous (relaxed), exact log_prob is tricky.
+        # Standard Hybrid SAC approach: treat discrete part as minimizing KL (entropy)
+        # log_pi = log(p_i).
+        # We calculate entropy term: sum(p * log(p))
+        log_prob_disc = (probs * torch.log(probs + 1e-6)).sum(dim=1, keepdim=True)
+        
+        # --- Combine ---
+        action = torch.cat([guess, trigger_val], dim=1)
+        
+        # Total log_prob = log_prob_cont + log_prob_disc
+        # (Assuming independence)
+        log_prob = log_prob_cont + log_prob_disc
+        
+        return action, log_prob, action # returning 'action' as 'mean' tuple for compatibility if needed
 
 
 class SACTrainer:
@@ -202,10 +289,28 @@ class SACTrainer:
         obs = torch.as_tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
         
         with torch.no_grad():
-            # Force deterministic behavior as requested
-            mean, std = self.actor(obs)
-            action = torch.tanh(mean)
-            action = (action + 1) / 2.0 # Scale [-1, 1] -> [0, 1]
+            if evaluate:
+                # Deterministic behavior
+                mean, std, logits = self.actor(obs)
+                
+                # Continuous: just mean -> sigmoid (no sampling)
+                # Wait, 'mean' is the logic before Sigma. 
+                # But our distribution is Normal(mean, std).
+                # If we want mode: mean.
+                # Then we apply Sigmoid to Squash.
+                # WAIT: Is mean pre-sigmoid? Yes.
+                guess = torch.sigmoid(mean)
+                
+                # Discrete: Argmax
+                # logits shape (1, 2). 
+                trigger_idx = torch.argmax(logits, dim=1)
+                trigger_val = trigger_idx.float().unsqueeze(1)
+                
+                action = torch.cat([guess, trigger_val], dim=1)
+                
+            else:
+                # Stochastic behavior (Training)
+                action, _, _ = self.actor.sample(obs)
         
         return action.cpu().numpy()[0] # (action_dim,)
 
@@ -216,13 +321,14 @@ class SACTrainer:
         with torch.no_grad():
             # Target Actions
             next_state_actions, next_state_log_pi, _ = self.actor.sample(next_obs)
-            # Input to Q-target needs to be raw [-1, 1] usually?
-            # Wait, Critic takes (s, a). If 'a' in buffer is [0, 1], then Critic learns on [0, 1].
-            # So next_state_actions must be [0, 1] too. 
-            # My Actor.sample returns [0, 1]. So we are consistent.
             
             q1_next_target, q2_next_target = self.critic_target(next_obs, next_state_actions)
-            min_q_next_target = torch.min(q1_next_target, q2_next_target) - self.log_alpha.exp() * next_state_log_pi
+            min_q_next_target = torch.min(q1_next_target, q2_next_target) 
+            
+            # Entropy subtraction (Broadcasting scalar log_pi to vector Q)
+            min_q_next_target = min_q_next_target - self.log_alpha.exp() * next_state_log_pi
+            
+            # Next Q Value: r + gamma * (Target)
             next_q_value = rewards + (1 - dones) * self.cfg.gamma * min_q_next_target
             
         # Critic Update
@@ -240,7 +346,10 @@ class SACTrainer:
         q1_pi, q2_pi = self.critic(obs, pi)
         min_q_pi = torch.min(q1_pi, q2_pi)
         
-        policy_loss = ((self.log_alpha.exp() * log_pi) - min_q_pi).mean()
+        # Sum vector Qs -> Scalar Q for optimization
+        total_q_pi = min_q_pi.sum(dim=1, keepdim=True)
+        
+        policy_loss = ((self.log_alpha.exp() * log_pi) - total_q_pi).mean()
         
         self.policy_optimizer.zero_grad()
         policy_loss.backward()
@@ -284,5 +393,27 @@ class Logger:
         print("------------------------------------------")
         print("| train/                  |             |")
         for k, v in stats.items():
-             print(f"|    {k:<20} | {v:<12.4f}|")
+             # Check if it is a Tensor or Numpy Array
+             is_tensor = hasattr(v, 'cpu') # torch tensor
+             is_numpy = isinstance(v, np.ndarray)
+             
+             size = 1
+             if is_tensor:
+                 size = v.numel()
+                 if size > 1: v = v.cpu()
+             elif is_numpy:
+                 size = v.size
+             
+             if size > 1:
+                 # Vector handling
+                 v_arr = np.array(v).flatten()
+                 for i, val in enumerate(v_arr):
+                     print(f"|    {k}_{i:<18} | {val:<12.4f}|")
+             else:
+                 # Scalar handling
+                 if hasattr(v, 'item'):
+                     val = v.item()
+                 else:
+                     val = v
+                 print(f"|    {k:<20} | {val:<12.4f}|")
         print("------------------------------------------")

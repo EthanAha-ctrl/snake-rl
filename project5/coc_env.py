@@ -17,8 +17,8 @@ class CoCEnv(my_gym.Env):
         
         # Action space: Continuous value in [0, 1]
         self.action_space = my_gym.Box(
-            low=np.array([0.0], dtype=np.float32), 
-            high=np.array([1.0], dtype=np.float32), 
+            low=np.array([0.0, 0.0], dtype=np.float32), 
+            high=np.array([1.0, 1.0], dtype=np.float32), 
             dtype=np.float32
         )
         
@@ -32,7 +32,9 @@ class CoCEnv(my_gym.Env):
         self.ground_truth = 0.0
         self.max_steps = 10
         self.current_step = 0
+        self.target_step = 0
         self.diff_threshold = (self.max_val - self.min_val) / self.max_steps
+        self.reached = False
 
     def reset(self, seed=None, options=None):
         if seed is not None:
@@ -40,39 +42,78 @@ class CoCEnv(my_gym.Env):
             
         self.ground_truth = np.random.uniform(self.min_val, self.max_val)
         self.current_step = 0
-        initial_diff = 0
-        self.prev_diff = float(initial_diff)
-        return np.array([initial_diff], dtype=np.float32), {}
+        self.target_step = 0
+        self.prev_diff = abs(self.target_step - self.ground_truth)
+        self.reached = False
+        return np.array([self.prev_diff], dtype=np.float32), {}
 
-    def step(self, action): 
-        # Action is expected to be a float or array of 1 float
-        if isinstance(action, np.ndarray):
-            guess = float(action.item())
+    def step(self, command):
+        if isinstance(command, np.ndarray):
+            guess = float(command[0])
+            action_val = float(command[1])
+            action = (action_val > 0.5)
         else:
-            guess = float(action)
-            
+            guess, action = command
+        
+        if action:
+            self.target_step = guess
+        else:
+            guess = self.target_step
+
         guess = max(0.0, min(1.0, guess))
         absolute_diff = abs(guess - self.ground_truth)
         
         self.current_step += 1
         
-        reward = 0.0
+        r_guess = 0.0
         terminated = False
         
         improvement = self.prev_diff - absolute_diff
-        reward = 1 if improvement > 0 else -1
-        reward -= (self.current_step * self.current_step) / 10.0
+        r_guess = 1.0 if improvement >= 0 else -1
+        r_guess -= (self.current_step * self.current_step) / 10.0
+        r_trigger = 0.0
+
+        reached = False
+        if absolute_diff < self.diff_threshold:
+            reached = True
+            if self.reached == False:
+                r_guess += 10.0
+            else:
+                r_guess = 0.0
+
+        if self.current_step >= self.max_steps:
+            terminated = True
+            r_guess -= 10.0
+            r_trigger -= 10.0
+
+        if reached == False:
+            if action == False:
+                r_trigger -= (self.current_step * self.current_step)
+            else:
+                r_trigger += 1.0
+        else:
+            if self.reached == True:
+                # once reached before
+                if action == False:
+                    r_trigger += 1.0
+                    terminated = True
+                else:
+                    r_trigger = -10.0
+            else:
+                # just reached for the first time
+                if action == False:
+                    r_trigger -= (self.current_step * self.current_step)
+                else:
+                    r_trigger += 1.0
+
+        self.prev_diff = absolute_diff
+        
+        total_reward = np.array([r_guess, r_trigger], dtype=np.float32)
         
         if absolute_diff < self.diff_threshold:
-            terminated = True
-            reward += 10.0 # Bonus for success
-        elif self.current_step >= self.max_steps:
-            terminated = True
-            reward -= 10.0 # Bonus for success
-            
-        self.prev_diff = absolute_diff
-            
-        return np.array([absolute_diff], dtype=np.float32), reward, terminated, False, {}
+            self.reached = True
+
+        return np.array([absolute_diff], dtype=np.float32), total_reward, terminated, False, {}
 
     def render(self):
         if self.render_mode == "rgb_array":

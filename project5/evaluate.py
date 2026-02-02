@@ -30,12 +30,12 @@ def evaluate():
 
     history_len = 10 
     
-    # Input dim for network logic matches train.py: history_len * (obs_dim + action_dim)
-    input_dim = history_len * (obs_dim + action_dim)
+    # Input dim for network logic matches train.py
+    input_dim = obs_dim * history_len + action_dim * history_len
 
     trainer = load_model(config, input_dim, action_dim)
     
-    stacker = HistoryStacker(obs_dim=obs_dim, history_len=history_len)
+    stacker = HistoryStacker(obs_dim=obs_dim, action_dim=action_dim, history_len=history_len)
     
     obs, _ = env.reset()
     stacker.reset(obs, default_obs=-1.0, default_action=-1.0)
@@ -69,7 +69,7 @@ def evaluate():
                 next_obs, _ = env.reset()
                 stacker.reset(next_obs, default_obs=-1.0, default_action=-1.0)
             else:
-                stacker.append(next_obs, float(action))
+                stacker.append(next_obs, action)
 
             time.sleep(0.05)
 
