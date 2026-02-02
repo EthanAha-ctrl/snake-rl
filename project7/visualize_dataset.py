@@ -28,27 +28,6 @@ def main():
     print("Starting visualization loop. Press 'q' to quit, 'b' for previous, any other key for next.")
     
     current_idx = 0
-    # The dataset was generated as: For each Radius 1..50: For each Crop 1..5: Write
-    # We want to visualize: For each Crop 1..5: For each Radius 1..50
-    # Total variants per image = 50 * 5 = 250
-    # Let's map "Logical Index" -> "Physical Index"
-    
-    def get_physical_index(logical_idx):
-        # 1. Which Source Image? (Every 250 images is a new source image)
-        img_block = logical_idx // 250
-        within_block = logical_idx % 250
-        
-        # 2. Within Block:
-        # Logical: Crop (0-4) varies slowly, Radius (0-49) varies fast
-        logical_crop = within_block // 50
-        logical_radius_idx = within_block % 50 
-        
-        # Physical: Radius (0-49) varies slowly, Crop (0-4) varies fast
-        # physical_idx = (RadiusIdx * 5) + CropIdx
-        physical_offset = (logical_radius_idx * 5) + logical_crop
-        
-        return (img_block * 250) + physical_offset
-
     total_samples = len(meta_info)
 
     try:
@@ -57,15 +36,14 @@ def main():
                 if current_idx < 0: current_idx = 0
                 if current_idx >= total_samples: current_idx = 0
                 
-                # Use mapping
-                physical_idx = get_physical_index(current_idx)
-                
-                # Careful about boundary (if total samples isn't multiple of 250, simple logic might break at end, but fine for now)
-                if physical_idx >= len(meta_info):
-                    physical_idx = len(meta_info) - 1
-                
                 # Get sequential sample
-                key_str, label = meta_info[physical_idx]
+                item = meta_info[current_idx]
+                sharpness_grid = None
+                
+                if len(item) == 3:
+                    key_str, label, sharpness_grid = item
+                else:
+                    key_str, label = item
                 
                 # Retrieve image from LMDB
                 img_bytes = txn.get(key_str.encode('ascii'))
@@ -77,16 +55,61 @@ def main():
                 
                 # Decode image
                 img_array = np.frombuffer(img_bytes, dtype=np.uint8)
-                img = cv2.imdecode(img_array, cv2.IMREAD_GRAYSCALE)
+                img_gray = cv2.imdecode(img_array, cv2.IMREAD_GRAYSCALE)
                 
-                if img is None:
+                if img_gray is None:
                     print(f"Warning: Failed to decode key {key_str}")
                     current_idx += 1
                     continue
+                
+                # Prepare display image (BGR)
+                display_img = cv2.cvtColor(img_gray, cv2.COLOR_GRAY2BGR)
+                
+                # Visualize Sharpness if available
+                if sharpness_grid is not None:
+                    # Find the base sample (sharpest) for the current sequence to fix the scale
+                    # Assuming 50 variants per image as generated in preprocessing.py
+                    VARIANTS_PER_IMAGE = 50
+                    base_idx = (current_idx // VARIANTS_PER_IMAGE) * VARIANTS_PER_IMAGE
+                    
+                    # Retrieve base sharpness max value
+                    try:
+                        base_item = meta_info[base_idx]
+                        if len(base_item) == 3:
+                            _, _, base_sharpness = base_item
+                            if base_sharpness is not None:
+                                global_max = base_sharpness.max()
+                            else:
+                                global_max = sharpness_grid.max()
+                        else:
+                            global_max = sharpness_grid.max()
+                    except IndexError: # Should not happen unless indices are messed up
+                         global_max = sharpness_grid.max()
+                    
+                    if global_max < 1e-6: global_max = 1.0
+
+                    # Normalize relative to the sharpest version
+                    s_norm = sharpness_grid / global_max
+                    s_norm = np.clip(s_norm, 0, 1)
+                        
+                    s_uint8 = (s_norm * 255).astype(np.uint8)
+                    
+                    # Resize to match image height (480)
+                    h, w = img_gray.shape[:2]
+                    # Target width for sharpness map to maintain aspect roughly or square pixels
+                    # Grid is 20x15. Image is 640x480. 
+                    # 640/20 = 32, 480/15 = 32. Perfect square blocks.
+                    s_resized = cv2.resize(s_uint8, (w, h), interpolation=cv2.INTER_NEAREST)
+                    
+                    # Apply colormap
+                    s_color = cv2.applyColorMap(s_resized, cv2.COLORMAP_JET)
+                    
+                    # Concatenate
+                    display_img = np.hstack([display_img, s_color])
 
                 # Display
                 title = f"R: {label} | Idx: {current_idx}/{total_samples}"
-                cv2.imshow("CoC Dataset visualizer", img)
+                cv2.imshow("CoC Dataset visualizer", display_img)
                 cv2.setWindowTitle("CoC Dataset visualizer", title)
                 
                 # Wait for key

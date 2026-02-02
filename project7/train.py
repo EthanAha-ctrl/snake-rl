@@ -48,7 +48,12 @@ class CoCDataset(Dataset):
             self.env = lmdb.open(self.lmdb_path, readonly=True, lock=False, readahead=False, meminit=False)
             self.txn = self.env.begin(write=False)
             
-        key_str, label_int = self.meta_info[idx]
+        # Handle both old (2 args) and new (3 args) metadata formats
+        item = self.meta_info[idx]
+        if len(item) == 3:
+            key_str, label_int, _ = item
+        else:
+            key_str, label_int = item
         
         # Read Bytes
         img_bytes = self.txn.get(key_str.encode('ascii'))
