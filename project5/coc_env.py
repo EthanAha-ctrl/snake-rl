@@ -1,5 +1,7 @@
 import numpy as np
 import my_gym
+import json
+import random
 
 class CoCEnv(my_gym.Env):
     """
@@ -37,6 +39,47 @@ class CoCEnv(my_gym.Env):
         self.reached = False
         self.is_first_trial = True
 
+        self.coc_error_dist = self._load_coc_error_dist("coc_error_distribution.json")
+
+    def _load_coc_error_dist(self, path):
+        with open(path, "r") as f:
+            payload = json.load(f)
+        dist = payload.get("error_distribution", None)
+        if dist is None:
+            raise ValueError("Invalid error distribution")
+        
+        out = {}
+        for gt_str, pred_map in dist.items():
+            gt = int(gt_str)
+            out[gt] = {int(p): float(prob) for p , prob in pred_map.items()}
+        return out
+
+    def __calculate_noised_diff(self, diff:float) -> float:
+        val = diff * 10
+        idx_floor = int(np.floor(val))
+        idx_ceil = idx_floor + 1
+        
+        weight_ceil = val - idx_floor
+        weight_floor = 1.0 - weight_ceil
+        
+        idx_floor = int(np.clip(idx_floor, 0, 9))
+        idx_ceil = int(np.clip(idx_ceil, 0, 9))
+
+        dist_floor = self.coc_error_dist.get(idx_floor, {})
+        dist_ceil = self.coc_error_dist.get(idx_ceil, {})
+        
+        merged_dist = {}
+        for k, p in dist_floor.items():
+            merged_dist[k] = merged_dist.get(k, 0.0) + float(p) * weight_floor
+            
+        for k, p in dist_ceil.items():
+            merged_dist[k] = merged_dist.get(k, 0.0) + float(p) * weight_ceil
+            
+        keys = list(merged_dist.keys())
+        weights = [merged_dist[k] for k in keys]
+        sampled = random.choices(keys, weights=weights, k=1)[0]
+        return sampled * 0.1
+
     def reset(self, seed=None, options=None):
         if seed is not None:
             np.random.seed(seed)
@@ -47,7 +90,7 @@ class CoCEnv(my_gym.Env):
         self.prev_diff = abs(self.target_step - self.ground_truth)
         self.reached = False
         self.is_first_trial = True
-        return np.array([max(0.0, min(1.0, np.random.normal(self.prev_diff, 0.01)))], dtype=np.float32), {}
+        return np.array([max(0.0, min(1.0, self.__calculate_noised_diff(self.prev_diff)))], dtype=np.float32), {}
 
     def step(self, command):
         if isinstance(command, np.ndarray):
@@ -121,7 +164,7 @@ class CoCEnv(my_gym.Env):
         if absolute_diff < self.diff_threshold:
             self.reached = True
 
-        return np.array([max(0.0, min(1.0, np.random.normal(absolute_diff, 0.01)))], dtype=np.float32), total_reward, terminated, False, {}
+        return np.array([max(0.0, min(1.0, self.__calculate_noised_diff(self.prev_diff)))], dtype=np.float32), total_reward, terminated, False, {}
 
     def render(self):
         if self.render_mode == "rgb_array":
