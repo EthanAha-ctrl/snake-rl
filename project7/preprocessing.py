@@ -56,7 +56,7 @@ def process_image_wrapper(img_path):
     outputs = []
     
     a_list = [0] * 10
-    b_list = list(range(1, 11))
+    b_list = list(range(0, 10))
     
     blurred_batch, sharpness_batch = core_blur(img_gray, a_list, b_list)
     

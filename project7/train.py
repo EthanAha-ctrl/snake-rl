@@ -70,8 +70,8 @@ class CoCDataset(Dataset):
         if self.transform:
             img = self.transform(img)
             
-        # Label: 1-10 -> 0-9 (Python index)
-        label = torch.tensor(label_int - 1, dtype=torch.long)
+        # Label: 0-9
+        label = torch.tensor(label_int, dtype=torch.long)
         
         return img, label
 

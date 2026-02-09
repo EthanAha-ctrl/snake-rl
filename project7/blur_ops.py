@@ -10,9 +10,9 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 GPU_KERNELS = {}
 
 def generate_kernel_tensor(radius):
-    if radius < 0.5:
-        return None 
-    
+    if radius == 0:
+        return torch.ones((1, 1, 1, 1), device=DEVICE)
+
     scale = 8
     aa_radius = radius * scale
     kernel_size_aa = int(2 * aa_radius) + 1
@@ -36,7 +36,7 @@ def generate_kernel_tensor(radius):
 
 def init():
     print(f"Pre-calculating kernels on GPU (Device: {DEVICE})...")
-    for r in range(1, 11):
+    for r in range(0, 10):
         GPU_KERNELS[r] = generate_kernel_tensor(r)
 
 def core_blur(clear_img, a, b):
