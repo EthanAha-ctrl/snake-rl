@@ -29,7 +29,7 @@ def main():
     # --- Load Model ---
     print(f"Loading model from {CHECKPOINT_PATH}...")
     # Initialize model structure (Must match train.py)
-    model = get_hrnet_w18(num_classes=50, in_channels=1)
+    model = get_hrnet_w18(num_classes=10, in_channels=1)
     
     # Load weights
     if os.path.exists(CHECKPOINT_PATH):
@@ -47,27 +47,10 @@ def main():
     print("Starting visualization loop. Press 'q' to quit, 'b' for previous, any other key for next.")
     
     current_idx = 0
-    # The dataset was generated as: For each Radius 1..50: For each Crop 1..5: Write
-    # We want to visualize: For each Crop 1..5: For each Radius 1..50
-    # Total variants per image = 50 * 5 = 250
-    # Let's map "Logical Index" -> "Physical Index"
+    # The dataset was generated as: Source Image -> 10 Radius variants
+    # Stored sequentially in meta_info.
+    # We simply iterate through them.
     
-    def get_physical_index(logical_idx):
-        # 1. Which Source Image? (Every 250 images is a new source image)
-        img_block = logical_idx // 250
-        within_block = logical_idx % 250
-        
-        # 2. Within Block:
-        # Logical: Crop (0-4) varies slowly, Radius (0-49) varies fast
-        logical_crop = within_block // 50
-        logical_radius_idx = within_block % 50 
-        
-        # Physical: Radius (0-49) varies slowly, Crop (0-4) varies fast
-        # physical_idx = (RadiusIdx * 5) + CropIdx
-        physical_offset = (logical_radius_idx * 5) + logical_crop
-        
-        return (img_block * 250) + physical_offset
-
     total_samples = len(meta_info)
 
     try:
@@ -76,10 +59,9 @@ def main():
                 if current_idx < 0: current_idx = 0
                 if current_idx >= total_samples: current_idx = 0
                 
-                # Use mapping
-                physical_idx = get_physical_index(current_idx)
+                # Direct mapping since dataset is sequential (Image -> Radii)
+                physical_idx = current_idx
                 
-                # Careful about boundary (if total samples isn't multiple of 250, simple logic might break at end, but fine for now)
                 if physical_idx >= len(meta_info):
                     physical_idx = len(meta_info) - 1
                 
@@ -110,13 +92,13 @@ def main():
 
                 with torch.no_grad():
                     output = model(input_tensor)
-                    # Output shape: [1, 50, H, W] (Dense prediction)
+                    # Output shape: [1, 10, H, W] (Dense prediction)
                     # Ensure we handle spatial dimensions correctly.
-                    # We average the logits over the spatial dimensions to get a global prediction vector [1, 50]
+                    # We average the logits over the spatial dimensions to get a global prediction vector [1, 10]
                     logits_avg = output.mean(dim=(2, 3)) 
-                    pred_idx = logits_avg.argmax(1).item() # 0-49
+                    pred_idx = logits_avg.argmax(1).item() # 0-9
                 
-                pred_radius = pred_idx + 1 # Convert back to 1-50
+                pred_radius = pred_idx + 1 # Convert back to 1-10
                 
                 # Display
                 # Calculate error for display coloring (optional, but nice)
