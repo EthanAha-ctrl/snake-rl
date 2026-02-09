@@ -14,13 +14,9 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 TARGET_H, TARGET_W = 480, 640
 
 def generate_kernel_tensor(radius):
-    """
-    Copied from preprocessing.py to ensure exact same blur generation.
-    """
-    if radius < 0.5:
-        return None 
-    
-    # 1. High Res Calculation (Anti-aliasing)
+    if radius == 0:
+        return torch.ones((1, 1, 1, 1), device=DEVICE)
+
     scale = 8
     aa_radius = radius * scale
     kernel_size_aa = int(2 * aa_radius) + 1
@@ -30,18 +26,15 @@ def generate_kernel_tensor(radius):
     center = kernel_size_aa // 2
     cv2.circle(kernel_aa, (center, center), int(aa_radius), 1.0, -1)
     
-    # 2. Downscale to Target Kernel Size (using OpenCV Lanczos CPU side first)
     target_ksize = int(2 * radius) + 1
     if target_ksize % 2 == 0: target_ksize += 1
     
     kernel = cv2.resize(kernel_aa, (target_ksize, target_ksize), interpolation=cv2.INTER_LANCZOS4)
     
-    # 3. Normalize
     kernel_sum = np.sum(kernel)
     if kernel_sum > 1e-6:
         kernel /= kernel_sum
         
-    # Convert to Tensor [OutCh, InCh, H, W] -> [1, 1, H, W]
     k_tensor = torch.from_numpy(kernel).to(DEVICE).unsqueeze(0).unsqueeze(0)
     return k_tensor
 
@@ -109,7 +102,7 @@ def main():
     # Pre-calculate Kernels
     print("Generating kernels...")
     kernels = {}
-    for r in range(1, 11):
+    for r in range(0, 10):
         kernels[r] = generate_kernel_tensor(r)
 
     # Generate all variants
@@ -117,16 +110,13 @@ def main():
     test_samples = [] # List of {"image": cv2_img, "label": int}
 
     print("Generating blurred variants...")
-    for r in range(1, 11):
+    for r in range(0, 10):
         k_tensor = kernels[r]
-        
-        if r <= 1 or k_tensor is None:
-            out_tensor = batch_patches
-        else:
-            k_h, k_w = k_tensor.shape[2:]
-            pad_h, pad_w = k_h // 2, k_w // 2
-            padded = F.pad(batch_patches, (pad_w, pad_w, pad_h, pad_h), mode='reflect')
-            out_tensor = F.conv2d(padded, k_tensor, padding=0)
+
+        k_h, k_w = k_tensor.shape[2:]
+        pad_h, pad_w = k_h // 2, k_w // 2
+        padded = F.pad(batch_patches, (pad_w, pad_w, pad_h, pad_h), mode='reflect')
+        out_tensor = F.conv2d(padded, k_tensor, padding=0)
         
         # To CPU for visualization storage
         # [5, 1, H, W] -> [5, H, W]
@@ -171,7 +161,7 @@ def main():
             output = model(input_tensor)
             logits_avg = output.mean(dim=(2, 3))
             pred_idx = logits_avg.argmax(1).item()
-            pred_radius = pred_idx + 1
+            pred_radius = pred_idx
 
         # Calculate error
         diff = abs(pred_radius - label)

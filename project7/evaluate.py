@@ -98,7 +98,7 @@ def main():
                     logits_avg = output.mean(dim=(2, 3)) 
                     pred_idx = logits_avg.argmax(1).item() # 0-9
                 
-                pred_radius = pred_idx + 1 # Convert back to 1-10
+                pred_radius = pred_idx
                 
                 # Display
                 # Calculate error for display coloring (optional, but nice)
