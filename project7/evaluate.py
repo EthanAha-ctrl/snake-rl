@@ -66,7 +66,7 @@ def main():
                     physical_idx = len(meta_info) - 1
                 
                 # Get sequential sample
-                key_str, label = meta_info[physical_idx]
+                key_str, label, sharpness = meta_info[physical_idx]
                 
                 # Retrieve image from LMDB
                 img_bytes = txn.get(key_str.encode('ascii'))
