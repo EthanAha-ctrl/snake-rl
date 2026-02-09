@@ -193,8 +193,8 @@ class CoCEnv(my_gym.Env):
             guess = self.target_step
 
         guess = max(0.0, min(1.0, guess))
-        vision_radius = self._compute_expected_radius(guess)
-        absolute_diff = abs((vision_radius / 10.0) - self.ground_truth)
+        absolute_diff = abs(guess - self.ground_truth)
+        absolute_diff = self._compute_expected_radius(absolute_diff) / 10.0
         
         self.current_step += 1
         
@@ -254,7 +254,7 @@ class CoCEnv(my_gym.Env):
         if absolute_diff < self.diff_threshold:
             self.reached = True
 
-        return np.array([max(0.0, min(1.0, self._compute_expected_radius(self.prev_diff) / 10.0))], dtype=np.float32), total_reward, terminated, False, {}
+        return np.array([max(0.0, min(1.0, self.prev_diff))], dtype=np.float32), total_reward, terminated, False, {}
 
     def render(self):
         if self.render_mode == "rgb_array":
