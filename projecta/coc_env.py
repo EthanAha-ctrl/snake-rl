@@ -72,22 +72,36 @@ class CoCEnv(my_gym.Env):
             self.label_to_keys[int(label)].append(key)
         
         # Sort keys to ensure deterministic indexing
-        for label in self.label_to_keys:
-            self.label_to_keys[label].sort()
-
         # Open LMDB
         if not os.path.exists(self.lmdb_path):
              raise FileNotFoundError(f"LMDB not found: {self.lmdb_path}")
-             
-        self.env_lmdb = lmdb.open(self.lmdb_path, readonly=True, lock=False)
-        self.total_entries = self.env_lmdb.stat()['entries']
-        self.device = torch.device('cpu') # Use CPU for env simulation to avoid overhead/compatibility issues if not needed
+
+        print("Loading LMDB into RAM..." )
+        env_lmdb = lmdb.open(self.lmdb_path, readonly=True, lock=False)
+        self.total_entries = env_lmdb.stat()['entries']
+        self.device = torch.device('cpu') 
         self.class_values = torch.arange(0, 10, dtype=torch.float32).unsqueeze(0)
+        
+        # Preload all data: key -> tensor (10, 15, 20)
+        self.key_to_tensor = {}
+        
+        with env_lmdb.begin() as txn:
+            cursor = txn.cursor()
+            for key, value in cursor:
+                key_str = key.decode('ascii')
+                # Check if this key is in our metadata (some might be extra?)
+                # Actually we trust label_to_keys structure, but we load everything for fast lookup
+                # Optimization: Only load what we need? No, load all.
+                tensor_np = np.frombuffer(value, dtype=np.float32).reshape(10, 15, 20)
+                # Store full tensor for potential spatial usage
+                self.key_to_tensor[key_str] = torch.from_numpy(tensor_np)
+                
+        env_lmdb.close()
+        print(f"Loaded {len(self.key_to_tensor)} tensors into memory.")
 
     def _get_random_tensor_for_label(self, label):
         keys = self.label_to_keys[label]
         if not keys:
-            # Fallback if no keys for label (should not happen with full DB)
             return torch.zeros((10, 15, 20), dtype=torch.float32)
             
         # Use fixed index if available, else random (should be set in reset)
@@ -95,13 +109,7 @@ class CoCEnv(my_gym.Env):
         idx = self.current_img_index % len(keys)
         key = keys[idx]
         
-        with self.env_lmdb.begin() as txn:
-            value_bytes = txn.get(key.encode('ascii'))
-            if value_bytes is None:
-                return torch.zeros((10, 15, 20), dtype=torch.float32)
-                
-            tensor_np = np.frombuffer(value_bytes, dtype=np.float32).reshape(10, 15, 20)
-            return torch.from_numpy(tensor_np)
+        return self.key_to_tensor.get(key, torch.zeros((10, 15, 20), dtype=torch.float32))
 
     def _get_interpolated_tensor(self, val):
         val = np.clip(val, 0.0, 9.999)
@@ -169,7 +177,7 @@ class CoCEnv(my_gym.Env):
         self.prev_diff = abs(self.target_step - self.ground_truth)
         self.reached = False
         self.is_first_trial = True
-        return np.array([max(0.0, min(1.0, self._compute_expected_radius(self.prev_diff) / 10.0))], dtype=np.float32), {}
+        return np.array([max(0.0, min(1.0, self._compute_expected_radius(self.prev_diff) / 9.0))], dtype=np.float32), {}
 
     def step(self, command):
         if isinstance(command, np.ndarray):
@@ -236,6 +244,8 @@ class CoCEnv(my_gym.Env):
         if self.is_first_trial == True:
             self.is_first_trial = False
             r_guess = 0.1
+            if (reached == True) and (action == True):
+                r_guess = 10.0
 
         self.prev_diff = absolute_diff
         
@@ -244,7 +254,7 @@ class CoCEnv(my_gym.Env):
         if absolute_diff < self.diff_threshold:
             self.reached = True
 
-        return np.array([max(0.0, min(1.0, self._compute_expected_radius(self.prev_diff) / 10.0))], dtype=np.float32), total_reward, terminated, False, {}
+        return np.array([max(0.0, min(1.0, self._compute_expected_radius(self.prev_diff) / 9.0))], dtype=np.float32), total_reward, terminated, False, {}
 
     def render(self):
         if self.render_mode == "rgb_array":
