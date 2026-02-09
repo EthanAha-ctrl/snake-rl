@@ -177,7 +177,7 @@ class CoCEnv(my_gym.Env):
         self.prev_diff = abs(self.target_step - self.ground_truth)
         self.reached = False
         self.is_first_trial = True
-        return np.array([max(0.0, min(1.0, self._compute_expected_radius(self.prev_diff) / 9.0))], dtype=np.float32), {}
+        return np.array([max(0.0, min(1.0, self._compute_expected_radius(self.prev_diff) / 10.0))], dtype=np.float32), {}
 
     def step(self, command):
         if isinstance(command, np.ndarray):
@@ -254,7 +254,7 @@ class CoCEnv(my_gym.Env):
         if absolute_diff < self.diff_threshold:
             self.reached = True
 
-        return np.array([max(0.0, min(1.0, self._compute_expected_radius(self.prev_diff) / 9.0))], dtype=np.float32), total_reward, terminated, False, {}
+        return np.array([max(0.0, min(1.0, self._compute_expected_radius(self.prev_diff) / 10.0))], dtype=np.float32), total_reward, terminated, False, {}
 
     def render(self):
         if self.render_mode == "rgb_array":
