@@ -5,7 +5,7 @@ import cv2
 import lmdb
 import pickle
 import time
-from blur_ops import core_blur, init_gpu_kernels, DEVICE, TARGET_H, TARGET_W
+from blur_ops import core_blur, init, DEVICE, TARGET_H, TARGET_W
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_ROOT = os.path.join(SCRIPT_DIR, "data")
@@ -55,8 +55,8 @@ def process_image_wrapper(img_path):
     
     outputs = []
     
-    a_list = [0] * 50
-    b_list = list(range(1, 51))
+    a_list = [0] * 10
+    b_list = list(range(1, 11))
     
     blurred_batch, sharpness_batch = core_blur(img_gray, a_list, b_list)
     

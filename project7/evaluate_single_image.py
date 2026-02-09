@@ -52,7 +52,7 @@ def main():
 
     # --- 1. Load Model ---
     print(f"Loading model from {CHECKPOINT_PATH}...")
-    model = get_hrnet_w18(num_classes=50, in_channels=1)
+    model = get_hrnet_w18(num_classes=10, in_channels=1)
     if os.path.exists(CHECKPOINT_PATH):
         model.load_state_dict(torch.load(CHECKPOINT_PATH, map_location=DEVICE))
     else:
@@ -109,7 +109,7 @@ def main():
     # Pre-calculate Kernels
     print("Generating kernels...")
     kernels = {}
-    for r in range(1, 51):
+    for r in range(1, 11):
         kernels[r] = generate_kernel_tensor(r)
 
     # Generate all variants
@@ -117,7 +117,7 @@ def main():
     test_samples = [] # List of {"image": cv2_img, "label": int}
 
     print("Generating blurred variants...")
-    for r in range(1, 51):
+    for r in range(1, 11):
         k_tensor = kernels[r]
         
         if r <= 1 or k_tensor is None:

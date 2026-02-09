@@ -36,7 +36,7 @@ def generate_kernel_tensor(radius):
 
 def init():
     print(f"Pre-calculating kernels on GPU (Device: {DEVICE})...")
-    for r in range(1, 51):
+    for r in range(1, 11):
         GPU_KERNELS[r] = generate_kernel_tensor(r)
 
 def core_blur(clear_img, a, b):

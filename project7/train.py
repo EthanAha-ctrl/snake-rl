@@ -15,7 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 # --- Configuration ---
 BATCH_SIZE = 64
-NUM_EPOCHS = 2
+NUM_EPOCHS = 20
 LEARNING_RATE = 2e-4
 WEIGHT_DECAY = 1e-2
 NUM_WORKERS = 8
@@ -70,7 +70,7 @@ class CoCDataset(Dataset):
         if self.transform:
             img = self.transform(img)
             
-        # Label: 1-50 -> 0-49 (Python index)
+        # Label: 1-10 -> 0-9 (Python index)
         label = torch.tensor(label_int - 1, dtype=torch.long)
         
         return img, label
@@ -108,7 +108,7 @@ def main():
                             num_workers=NUM_WORKERS, pin_memory=True, persistent_workers=True)
 
     # 2. Model
-    model = get_hrnet_w18(num_classes=50, in_channels=1).to(DEVICE)
+    model = get_hrnet_w18(num_classes=10, in_channels=1).to(DEVICE)
     
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
@@ -132,7 +132,7 @@ def main():
             optimizer.zero_grad()
             outputs = model(inputs)
 
-            # Expand targets to match output spatial resolution (B, 50, H, W) -> Targets (B, H, W)
+            # Expand targets to match output spatial resolution (B, 10, H, W) -> Targets (B, H, W)
             H, W = outputs.shape[2], outputs.shape[3]
             targets_expanded = targets.view(-1, 1, 1).expand(-1, H, W)
 

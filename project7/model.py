@@ -503,7 +503,7 @@ class HighResolutionNet(nn.Module):
         return y
 
 
-def get_hrnet_w18(num_classes=50, in_channels=1):
+def get_hrnet_w18(num_classes=10, in_channels=1):
     # Config for W18
     cfg = {
         'STAGE1': {

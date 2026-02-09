@@ -68,8 +68,8 @@ def main():
                 # Visualize Sharpness if available
                 if sharpness_grid is not None:
                     # Find the base sample (sharpest) for the current sequence to fix the scale
-                    # Assuming 50 variants per image as generated in preprocessing.py
-                    VARIANTS_PER_IMAGE = 50
+                    # Assuming 10 variants per image as generated in preprocessing.py
+                    VARIANTS_PER_IMAGE = 10
                     base_idx = (current_idx // VARIANTS_PER_IMAGE) * VARIANTS_PER_IMAGE
                     
                     # Retrieve base sharpness max value
