@@ -44,8 +44,6 @@ class CoCEnv(my_gym.Env):
         self.current_step = 0
         self.target_step = np.random.uniform(self.min_val, self.max_val)
         self.diff_threshold = (self.max_val - self.min_val) / self.max_steps
-        self.reached = False
-        self.is_first_trial = True
 
         self.meta_path = META_PATH
         self.lmdb_path = LMDB_PATH
@@ -60,7 +58,6 @@ class CoCEnv(my_gym.Env):
         with open(self.meta_path, 'rb') as f:
             meta_info = pickle.load(f)
             
-        # Build label to key map
         self.label_to_sharpness = {i: [] for i in range(10)}
         
         count = 0
@@ -117,8 +114,16 @@ class CoCEnv(my_gym.Env):
         self.current_step = 0
         self.target_step = np.random.uniform(self.min_val, self.max_val)
         self.prev_diff = abs(self.target_step - self.ground_truth)
-        self.reached = False
-        self.is_first_trial = True
+        self.prev_position = self.target_step
+        self.first_trial = True
+        '''
+        FSM states:
+        - coarse search
+        - fine search
+        '''
+        self.fsm = "coarse search"
+        self.fsm_overshoot_count = 0
+
         return self._get_interpolated_sharpness(self.prev_diff * 10.0), {}
 
     def step(self, command):
@@ -139,63 +144,62 @@ class CoCEnv(my_gym.Env):
         obs = self._get_interpolated_sharpness(absolute_diff * 10.0)
         
         self.current_step += 1
-        
-        r_guess = 0.0
-        terminated = False
-        
         improvement = self.prev_diff - absolute_diff
-        r_guess = 1.0 if improvement >= 0 else -1
-        r_guess -= (self.current_step * self.current_step) / 10.0
+        r_guess = 0.0
         r_trigger = 0.0
+        if self.first_trial:
+            r_guess = 0.1
+            r_trigger = 0.1 if action else -10.0
+        else:
+            sign = np.sign(self.prev_position - self.ground_truth) * np.sign(guess - self.ground_truth)
+            if sign < 0:
+                self.fsm_overshoot_count += 1
+            if self.fsm == "coarse search":
+                # calculate overshoot
+                if self.fsm_overshoot_count == 1:
+                    self.fsm = "fine search"
+                else:
+                    self.fsm = "coarse search"
 
-        reached = False
-        if absolute_diff < self.diff_threshold:
-            reached = True
-            if self.reached == False:
-                r_guess += 10.0
+                if action:
+                    r_trigger = 0.1
+                else:
+                    r_trigger = -0.1
+
+                if sign < 0:
+                    r_guess = 1.0
+                else:
+                    r_guess = -absolute_diff
             else:
-                r_guess = 0.0
+                # fine search
+                #r_guess = -np.pow(np.clip(self.fsm_overshoot_count-2, a_min=0, a_max=10), 3)
+                r_guess += -self.current_step * self.current_step / 10.0
+                r_guess += improvement * 10.0
+                if ((action == False) and (self.prev_diff < self.diff_threshold)):
+                    r_trigger = 2.0
+                elif (action == True) and (self.prev_diff < self.diff_threshold):
+                    r_trigger = -2.0
+                elif (action == False) and (self.prev_diff > self.diff_threshold):
+                    r_trigger = -2.0
+                elif (action == True) and (self.prev_diff > self.diff_threshold):
+                    r_trigger = 1.0
+
+        terminated = False
+        if (self.first_trial == False) and (absolute_diff < self.diff_threshold) and (action == False):
+            terminated = True
+            r_guess = 10.0
+            r_trigger = 10.0
 
         if self.current_step >= self.max_steps:
             terminated = True
-            r_guess -= 10.0
-            r_trigger -= 10.0
-
-        if reached == False:
-            if action == False:
-                r_trigger -= (self.current_step * self.current_step)
-            else:
-                r_trigger += 1.0
-        else:
-            if self.reached == True:
-                pass
-            else:
-                # just reached for the first time
-                if action == False:
-                    r_trigger -= (self.current_step * self.current_step)
-                else:
-                    r_trigger += 1.0
-
-        if self.reached == True:
-            if action == False:
-                r_trigger += 1.0
-                terminated = True
-            else:
-                r_trigger = -10.0
-
-        if self.is_first_trial == True:
-            self.is_first_trial = False
-            r_guess = 0.1
-            if (reached == True) and (action == True):
-                r_guess = 10.0
+            r_guess = -10.0
+            r_trigger = -10.0
 
         self.prev_diff = absolute_diff
         
         total_reward = np.array([r_guess, r_trigger], dtype=np.float32)
-        
-        if absolute_diff < self.diff_threshold:
-            self.reached = True
-
+        self.prev_position = guess
+        self.first_trial = False
         return obs, total_reward, terminated, False, {}
 
     def render(self):
