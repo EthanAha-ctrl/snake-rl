@@ -113,3 +113,26 @@ pass 1: feature extractor - supervised learning
 
 pass 2: action control
 	
+## Project a CoC: Project 5, Project 8
+
+input: offline dataset of tensor 10x20x15x10 from 1.1K images.
+10 position of CoC
+20x15 spatial resolution
+10 one-hot encoding of the class of CoC
+
+goal : train the MLP layers to guess the number
+
+## Project b Sharpness: Project a
+
+input: offline dataset of the sharpness, 10x20x15 from 1.1K images
+10 position of CoC
+20x15 spatial resolution
+
+goal: train the MLP layers to guess the number
+
+## Project c CoC + Sharpness: Project a, Project b
+
+input: offline dataset of the sharpness, 10x20x15, and tensor 10x20x15x10 from 1.1K images
+10 position of CoC
+20x15 spatial resolution of sharpness, spatial resolution of the tensor
+10 one-hot encoding of the class of CoC
