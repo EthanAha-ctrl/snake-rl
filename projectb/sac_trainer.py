@@ -339,6 +339,7 @@ class SACTrainer:
         
         self.q_optimizer.zero_grad()
         q_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1.0) # Gradient Clipping
         self.q_optimizer.step()
         
         # Actor Update
@@ -353,6 +354,7 @@ class SACTrainer:
         
         self.policy_optimizer.zero_grad()
         policy_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 1.0) # Gradient Clipping
         self.policy_optimizer.step()
         
         # Alpha Update

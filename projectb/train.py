@@ -142,15 +142,15 @@ def train(config: SACConfig = None):
 
 if __name__ == "__main__":
     config = SACConfig(
-        total_steps=50_000,
+        total_steps=1_500_000,
         start_steps=5000, # Warmup random
         history_len=10,
-        lr=3e-4,
+        lr=2e-4,
         gamma=0.1,
         tau=0.005,
-        alpha=0.2,
+        alpha=0.05,
         hidden_dim=256,
-        batch_size=256,
+        batch_size=512,
         buffer_size=100_000,
         save_path="sac_coc.pth",
     )
