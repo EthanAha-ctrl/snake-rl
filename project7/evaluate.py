@@ -65,8 +65,14 @@ def main():
                 if physical_idx >= len(meta_info):
                     physical_idx = len(meta_info) - 1
                 
-                # Get sequential sample
-                key_str, label, sharpness = meta_info[physical_idx]
+                # Get sequential sample and unpack metadata
+                item = meta_info[physical_idx]
+                if len(item) == 4:
+                    key_str, anchor, label, sharpness = item
+                else:
+                    # Legacy format
+                    key_str, label, sharpness = item
+                    anchor = None
                 
                 # Retrieve image from LMDB
                 img_bytes = txn.get(key_str.encode('ascii'))
@@ -93,7 +99,6 @@ def main():
                 with torch.no_grad():
                     output = model(input_tensor)
                     # Output shape: [1, 10, H, W] (Dense prediction)
-                    # Ensure we handle spatial dimensions correctly.
                     # We average the logits over the spatial dimensions to get a global prediction vector [1, 10]
                     logits_avg = output.mean(dim=(2, 3)) 
                     pred_idx = logits_avg.argmax(1).item() # 0-9
@@ -105,7 +110,10 @@ def main():
                 diff = abs(pred_radius - label)
                 status = "OK" if diff == 0 else f"Err: {diff}"
                 
-                title = f"GT: {label} | Pred: {pred_radius} ({status}) | Idx: {current_idx}/{total_samples}"
+                if anchor is not None:
+                    title = f"Anchor: {anchor} | GT: {label} | Pred: {pred_radius} ({status}) | Idx: {current_idx}/{total_samples}"
+                else:
+                    title = f"GT: {label} | Pred: {pred_radius} ({status}) | Idx: {current_idx}/{total_samples}"
                 
                 cv2.imshow("CoC Inference Visualizer", img)
                 cv2.setWindowTitle("CoC Inference Visualizer", title)

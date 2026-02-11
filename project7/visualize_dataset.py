@@ -39,8 +39,11 @@ def main():
                 # Get sequential sample
                 item = meta_info[current_idx]
                 sharpness_grid = None
+                anchor = None
                 
-                if len(item) == 3:
+                if len(item) == 4:
+                    key_str, anchor, label, sharpness_grid = item
+                elif len(item) == 3:
                     key_str, label, sharpness_grid = item
                 else:
                     key_str, label = item
@@ -75,8 +78,8 @@ def main():
                     # Retrieve base sharpness max value
                     try:
                         base_item = meta_info[base_idx]
-                        if len(base_item) == 3:
-                            _, _, base_sharpness = base_item
+                        if len(base_item) >= 3:
+                            base_sharpness = base_item[-1]  # sharpness is always last
                             if base_sharpness is not None:
                                 global_max = base_sharpness.max()
                             else:
@@ -108,7 +111,10 @@ def main():
                     display_img = np.hstack([display_img, s_color])
 
                 # Display
-                title = f"R: {label} | Idx: {current_idx}/{total_samples}"
+                if anchor is not None:
+                    title = f"Anchor: {anchor} | Blur: {label} | Idx: {current_idx}/{total_samples}"
+                else:
+                    title = f"R: {label} | Idx: {current_idx}/{total_samples}"
                 cv2.imshow("CoC Dataset visualizer", display_img)
                 cv2.setWindowTitle("CoC Dataset visualizer", title)
                 

@@ -5,7 +5,7 @@ import cv2
 import lmdb
 import pickle
 import time
-from blur_ops import core_blur, init, DEVICE, TARGET_H, TARGET_W
+from blur_ops import simulator, init, DEVICE, TARGET_H, TARGET_W
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_ROOT = os.path.join(SCRIPT_DIR, "data")
@@ -55,15 +55,14 @@ def process_image_wrapper(img_path):
     
     outputs = []
     
-    a_list = [0] * 10
-    b_list = list(range(0, 10))
-    
-    blurred_batch, sharpness_batch = core_blur(img_gray, a_list, b_list)
-    
-    for i, r in enumerate(b_list):
-        blurred_img = blurred_batch[i]
-        sharpness_grid = sharpness_batch[i]
-        outputs.append((blurred_img, r, sharpness_grid))
+    for anchor in range(10):
+        # Generate all blurred components needed for this anchor
+        # returns list of (blurred_img, blur_level, sharpness_grid)
+        scene_outputs = simulator.simulate_scene(img_gray, anchor, mode='coc')
+        
+        for (blurred_img, blur_level, sharpness_grid) in scene_outputs:
+            # We store: (image, anchor_idx, blur_level, sharpness)
+            outputs.append((blurred_img, anchor, blur_level, sharpness_grid))
             
     return outputs
 
@@ -112,7 +111,8 @@ def main():
                     if success:
                         key_str = f"image_{global_counter:08d}"
                         txn.put(key_str.encode('ascii'), encoded_bytes.tobytes())
-                        meta_info.append((key_str, int(r), sharpness_grid))
+                        # item format: (key, anchor, blur_level, sharpness)
+                        meta_info.append((key_str, int(anchor), int(blur_level), sharpness_grid))
                         global_counter += 1
             
             except Exception as e:

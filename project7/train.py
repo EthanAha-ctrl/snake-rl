@@ -48,9 +48,12 @@ class CoCDataset(Dataset):
             self.env = lmdb.open(self.lmdb_path, readonly=True, lock=False, readahead=False, meminit=False)
             self.txn = self.env.begin(write=False)
             
-        # Handle both old (2 args) and new (3 args) metadata formats
+        # Handle metadata formats: 4-element (key, anchor, blur_level, sharpness) or legacy
         item = self.meta_info[idx]
-        if len(item) == 3:
+        if len(item) == 4:
+            key_str, anchor, blur_level, sharpness_grid = item
+            label_int = blur_level
+        elif len(item) == 3:
             key_str, label_int, _ = item
         else:
             key_str, label_int = item

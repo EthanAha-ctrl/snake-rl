@@ -64,7 +64,7 @@ def core_blur(clear_img, a, b):
         outputs.append(out_tensor)
         
     if not outputs:
-        return np.array([])
+        return np.array([]), []
         
     batch_out = torch.cat(outputs, dim=0)
     batch_out = batch_out.clamp(0, 255).byte()
@@ -76,6 +76,58 @@ def core_blur(clear_img, a, b):
         sharpness_list.append(s)
 
     return final_imgs, sharpness_list
+
+
+class BlurSimulatorStub:
+    def __init__(self):
+        pass
+
+    def get_blur_range(self, anchor_idx):
+        """
+        Returns the list of blur levels needed for a given anchor.
+        For CoC simulation, this is simply 0 to anchor_idx.
+        """
+        return list(range(anchor_idx + 1))
+
+    def simulate_scene(self, clear_img, anchor_idx, mode='coc'):
+        """
+        Generates the blurred images for a specific anchor configuration.
+        
+        Args:
+            clear_img: Input image (grayscale)
+            anchor_idx: The anchor index (0-9) representing the lens configuration/max blur.
+            mode: 'coc' for internal simulation, 'zemax' for external.
+            
+        Returns:
+            List of (blurred_image, blur_level, sharpness_grid) tuples.
+        """
+        if mode == 'coc':
+            # Scheme A: Explicit generation for this anchor
+            # We want to generate images for blur levels 0 to anchor_idx
+            
+            target_levels = self.get_blur_range(anchor_idx)
+            
+            # For CoC, we always start from the clear image (blur=0)
+            # So 'a' (start) is always 0. 'b' (end) is the target level.
+            a_list = [0] * len(target_levels)
+            b_list = target_levels
+            
+            blurred_imgs, sharpness_grids = core_blur(clear_img, a_list, b_list)
+            
+            results = []
+            for i, level in enumerate(target_levels):
+                results.append((blurred_imgs[i], level, sharpness_grids[i]))
+            
+            return results
+            
+        elif mode == 'zemax':
+            print(f"Zemax mode for anchor {anchor_idx} not implemented. Returning empty.")
+            return []
+        
+        else:
+            raise ValueError(f"Unknown mode: {mode}")
+
+simulator = BlurSimulatorStub()
 
 
 def calculate_sharpness_grid(img, kernel_size=5):
