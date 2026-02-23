@@ -79,6 +79,8 @@ def train(config: SACConfig = None):
     from sac_trainer import Logger
     logger = Logger()
 
+    episode_transitions = []
+
     while trainingState.global_step < config.total_steps:
         # 1. Select Action
         current_stacked_obs = stacker.stacked()
@@ -100,15 +102,23 @@ def train(config: SACConfig = None):
         stacker.append(next_obs, action) 
         next_stacked_obs = stacker.stacked()
 
-        trainer.replay_buffer.add(
-            current_stacked_obs, 
-            action, 
-            reward, 
-            next_stacked_obs, 
-            done
-        )
+        episode_transitions.append((current_stacked_obs, action, reward, next_stacked_obs, done))
         
         if done:
+            # --- 混合采样逻辑 (Mixed Sampling) ---
+            keep_episode = True
+            # 如果 episode 长度 < 5，有 90% 的概率丢弃它，只保留 10% 的短平快经验
+            if len(episode_transitions) < 5 and trainingState.global_step >= config.start_steps:
+                if np.random.rand() > 0.1:  # 90% probability to discard
+                    keep_episode = False
+            
+            if keep_episode:
+                for transition in episode_transitions:
+                    trainer.replay_buffer.add(*transition)
+            
+            # Reset episode variables
+            episode_transitions = []
+            
             reset_obs, _ = env.reset()
             stacker.reset(reset_obs, default_obs=-1.0, default_action=-1.0)
             
