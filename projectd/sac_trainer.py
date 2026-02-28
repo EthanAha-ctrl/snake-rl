@@ -277,24 +277,23 @@ class SACTrainer:
             d_model=64, nhead=1, num_layers=2, out_dim=256, action_history_dim=20
         ).to(self.device)
         
-        # 2. Networks (Load old dimensions to match sac_coc.pth)
-        old_obs_dim = 30
+        # 2. Networks (Load old dimensions to match mlp_best.pth from projectc)
+        old_obs_dim = 40
         self.critic = Critic(old_obs_dim, action_dim, self.cfg.hidden_dim).to(self.device)
         self.actor = Actor(old_obs_dim, action_dim, self.cfg.hidden_dim).to(self.device)
         
-        # Load pre-trained MLP weights and freeze them
+        # Try to load reference/projectc/mlp_best.pth to freeze it
         import os
-        frozen_mlp_path = os.path.join("reference", "projectc", "mlp_best.pth")
-        assert os.path.exists(frozen_mlp_path), f"Frozen MLP checkpoint not found: {frozen_mlp_path}"
-        
-        print(f"Loading frozen MLP from {frozen_mlp_path}...")
-        checkpoint = torch.load(frozen_mlp_path, map_location=self.device)
-        self.critic.load_state_dict(checkpoint['critic'], strict=False)
-        self.actor.load_state_dict(checkpoint['actor'], strict=False)
-        
-        # Freeze the old parameters
-        for p in self.critic.parameters(): p.requires_grad = False
-        for p in self.actor.parameters(): p.requires_grad = False
+        pretrained_mlp_path = os.path.join("reference", "projectc", "mlp_best.pth")
+        if os.path.exists(pretrained_mlp_path):
+            print(f"Loading frozen features from {pretrained_mlp_path}...")
+            checkpoint = torch.load(pretrained_mlp_path, map_location=self.device)
+            self.critic.load_state_dict(checkpoint['critic'], strict=False)
+            self.actor.load_state_dict(checkpoint['actor'], strict=False)
+            
+            # Freeze the old parameters
+            for p in self.critic.parameters(): p.requires_grad = False
+            for p in self.actor.parameters(): p.requires_grad = False
 
         # 3. Replace the first layers to bridge from Encoder's 256 to hidden_dim 256
         self.critic.shared_net_1[0] = nn.Linear(256 + action_dim, self.cfg.hidden_dim).to(self.device)

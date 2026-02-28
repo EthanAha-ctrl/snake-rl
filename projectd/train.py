@@ -176,8 +176,8 @@ if __name__ == "__main__":
         tau=0.005,
         alpha=0.2,
         hidden_dim=256,
-        batch_size=256,
-        buffer_size=100_000,
+        batch_size=32,
+        buffer_size=20_000,
         save_path="sac_coc.pth",
     )
     train(config)
