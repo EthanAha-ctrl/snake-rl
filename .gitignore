@@ -213,3 +213,14 @@ project2/runs/
 *.pth
 *.mmap
 *.bin
+
+*.png
+*.jpg
+*.jpeg
+*.pkl
+*.lmdb
+*.mdb
+
+projecta/reference/
+projectb/reference/
+projectc/reference/

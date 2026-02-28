@@ -32,10 +32,10 @@ class CoCEnv(my_gym.Env):
             dtype=np.float32
         )
         
-        # Observation space: Absolute difference in [0, 1]
+        # Observation space: 10x15x20 flattened (3000 dimensions)
         self.observation_space = my_gym.Box(
-            low=np.array([0.0], dtype=np.float32), 
-            high=np.array([1.0], dtype=np.float32), 
+            low=np.zeros((3000,), dtype=np.float32), 
+            high=np.ones((3000,), dtype=np.float32), 
             dtype=np.float32
         )
         
@@ -177,7 +177,10 @@ class CoCEnv(my_gym.Env):
         self.prev_diff = abs(self.target_step - self.ground_truth)
         self.reached = False
         self.is_first_trial = True
-        return np.array([max(0.0, min(1.0, self._compute_expected_radius(self.prev_diff) / 10.0))], dtype=np.float32), {}
+        
+        # Return flattened tensor
+        obs_tensor = self._get_interpolated_tensor(self.prev_diff * 10.0)
+        return obs_tensor.numpy().flatten(), {}
 
     def step(self, command):
         if isinstance(command, np.ndarray):
@@ -194,7 +197,11 @@ class CoCEnv(my_gym.Env):
 
         guess = max(0.0, min(1.0, guess))
         absolute_diff = abs(guess - self.ground_truth)
-        absolute_diff = self._compute_expected_radius(absolute_diff) / 10.0
+        
+        obs_tensor = self._get_interpolated_tensor(absolute_diff * 10.0)
+        
+        # For evaluation tracking in step (approximate diff)
+        approx_diff_for_reward = self._compute_expected_radius(absolute_diff) / 10.0
         
         self.current_step += 1
         
@@ -251,10 +258,11 @@ class CoCEnv(my_gym.Env):
         
         total_reward = np.array([r_guess, r_trigger], dtype=np.float32)
         
-        if absolute_diff < self.diff_threshold:
+        if approx_diff_for_reward < self.diff_threshold:
             self.reached = True
 
-        return np.array([max(0.0, min(1.0, self.prev_diff))], dtype=np.float32), total_reward, terminated, False, {}
+        self.prev_diff = absolute_diff
+        return obs_tensor.numpy().flatten(), total_reward, terminated, False, {}
 
     def render(self):
         if self.render_mode == "rgb_array":

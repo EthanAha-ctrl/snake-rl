@@ -94,7 +94,8 @@ def main():
     # 4. Main Generation Loop
     a_list = list(range(10))
     
-    with env.begin(write=True) as txn:
+    txn = env.begin(write=True)
+    try:
         with torch.no_grad():
             for img_path in tqdm(selected_paths):
                 # Load BG
@@ -133,19 +134,16 @@ def main():
                 blended_imgs, labels = generate_focus_stack(bg_gray, fg_gray, a_list, b_depth, c_depth)
                 
                 # Prepare batch tensor for HRNet
-                # blended_imgs is a list of [480, 640] unit8 arrays
                 batch_tensors = []
                 for img in blended_imgs:
-                    # Convert to [1, 480, 640] float32 normalized 0-1
                     t = torch.from_numpy(img.astype(np.float32) / 255.0).unsqueeze(0)
                     batch_tensors.append(t)
                 
                 batch_tensor = torch.stack(batch_tensors).to(DEVICE) # [10, 1, 480, 640]
                 
                 # Extract Features via HRNet
-                small_tensors = model(batch_tensor) # [10, 10, 480, 640] -> Wait, the model output head is what?
-                # Actually, the model normally outputs [B, C, H_small, W_small] where C=10, H_small=15, W_small=20
-                small_tensors_np = small_tensors.cpu().numpy().astype(np.float32) # [10, 10, 15, 20]
+                small_tensors = model(batch_tensor) 
+                small_tensors_np = small_tensors.cpu().numpy().astype(np.float32) 
                 
                 # Save to LMDB and Meta
                 for i in range(10):
@@ -153,22 +151,22 @@ def main():
                     tensor_data = small_tensors_np[i]
                     txn.put(key_str.encode('ascii'), tensor_data.tobytes())
                     
-                    # Store absolute foreground blur radius as label, plus original depth info just in case
-                    label_radius = labels[i] # absolute blur radius of foreground
-                    
-                    # Store tuple (key, label, b_depth, c_depth, a_focus) in metadata
-                    # To be somewhat compatible with old format while adding info:
-                    # old format used: (key_str, int(r), sharpness_grid)
-                    # We dropped sharpness_grid for now, or we can compute it on the final blended_image?
-                    # The user didn't request sharpness grid for this new pipeline, but `history_stacker` might need it?
-                    # Let's keep it clean: (key, label)
+                    label_radius = labels[i]
                     meta_info.append((key_str, label_radius, dict(a=i, b=b_depth, c=c_depth)))
                     global_counter += 1
                 
                 # Periodic Commit to save memory
                 if global_counter % 5000 == 0:
                     txn.commit()
-                    env.begin(write=True)
+                    txn = env.begin(write=True)
+                    
+        txn.commit()
+    except Exception as e:
+        txn.abort()
+        print(f"Aborted due to error: {e}")
+        raise
+    finally:
+        env.close()
 
     print(f"Done. Saved {global_counter} tensors to {OUTPUT_LMDB_PATH}")
     

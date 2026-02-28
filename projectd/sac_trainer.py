@@ -270,14 +270,45 @@ class SACTrainer:
         # Initialize Replay Buffer
         self.replay_buffer = ReplayBuffer(self.cfg.buffer_size, obs_dim, action_dim, self.device)
         
-        # Networks
-        self.critic = Critic(obs_dim, action_dim, self.cfg.hidden_dim).to(self.device)
+        # 1. Initialize Encoder
+        from transformer_encoder import SpatioTemporalEncoder
+        self.encoder = SpatioTemporalEncoder(
+            history_len=10, channels=10, H=15, W=20, 
+            d_model=64, nhead=1, num_layers=2, out_dim=256, action_history_dim=20
+        ).to(self.device)
+        
+        # 2. Networks (Load old dimensions to match sac_coc.pth)
+        old_obs_dim = 30
+        self.critic = Critic(old_obs_dim, action_dim, self.cfg.hidden_dim).to(self.device)
+        self.actor = Actor(old_obs_dim, action_dim, self.cfg.hidden_dim).to(self.device)
+        
+        # Try to load sac_coc.pth to freeze it
+        import os
+        if os.path.exists(self.cfg.save_path):
+            print(f"Loading frozen features from {self.cfg.save_path}...")
+            checkpoint = torch.load(self.cfg.save_path, map_location=self.device)
+            self.critic.load_state_dict(checkpoint['critic'], strict=False)
+            self.actor.load_state_dict(checkpoint['actor'], strict=False)
+            
+            # Freeze the old parameters
+            for p in self.critic.parameters(): p.requires_grad = False
+            for p in self.actor.parameters(): p.requires_grad = False
+
+        # 3. Replace the first layers to bridge from Encoder's 256 to hidden_dim 256
+        self.critic.shared_net_1[0] = nn.Linear(256 + action_dim, self.cfg.hidden_dim).to(self.device)
+        self.critic.shared_net_2[0] = nn.Linear(256 + action_dim, self.cfg.hidden_dim).to(self.device)
+        self.actor.shared_net[0] = nn.Linear(256, self.cfg.hidden_dim).to(self.device)
+        
         self.critic_target = copy.deepcopy(self.critic)
         
-        self.actor = Actor(obs_dim, action_dim, self.cfg.hidden_dim).to(self.device)
+        # 4. Optimizers
+        q_params = list(self.encoder.parameters()) + \
+                   list(self.critic.shared_net_1[0].parameters()) + \
+                   list(self.critic.shared_net_2[0].parameters())
+        policy_params = list(self.actor.shared_net[0].parameters())
         
-        self.q_optimizer = optim.Adam(self.critic.parameters(), lr=self.cfg.lr)
-        self.policy_optimizer = optim.Adam(self.actor.parameters(), lr=self.cfg.lr)
+        self.q_optimizer = optim.Adam(q_params, lr=self.cfg.lr)
+        self.policy_optimizer = optim.Adam(policy_params, lr=self.cfg.lr)
         
         # Automatic Entropy Tuning (Optional)
         self.target_entropy = -torch.prod(torch.Tensor([action_dim]).to(self.device)).item()
@@ -285,13 +316,17 @@ class SACTrainer:
         self.alpha_optimizer = optim.Adam([self.log_alpha], lr=self.cfg.lr)
 
     def select_action(self, obs: np.ndarray, evaluate=False):
-        # Obs: numpy (obs_dim,)
+        # Obs: numpy (obs_dim,) - representing the flattened history tensor
         obs = torch.as_tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
+        
+        # Encode through Transformer Encoder
+        with torch.no_grad():
+            encoded_obs = self.encoder(obs)
         
         with torch.no_grad():
             if evaluate:
                 # Deterministic behavior
-                mean, std, logits = self.actor(obs)
+                mean, std, logits = self.actor(encoded_obs)
                 
                 # Continuous: just mean -> sigmoid (no sampling)
                 # Wait, 'mean' is the logic before Sigma. 
@@ -310,7 +345,7 @@ class SACTrainer:
                 
             else:
                 # Stochastic behavior (Training)
-                action, _, _ = self.actor.sample(obs)
+                action, _, _ = self.actor.sample(encoded_obs)
         
         return action.cpu().numpy()[0] # (action_dim,)
 
@@ -318,11 +353,17 @@ class SACTrainer:
         # Sample a batch from memory
         obs, actions, rewards, next_obs, dones = self.replay_buffer.sample(batch_size)
         
+        # Run Encoder
+        encoded_obs = self.encoder(obs)
+        
         with torch.no_grad():
-            # Target Actions
-            next_state_actions, next_state_log_pi, _ = self.actor.sample(next_obs)
+            # Run Encoder for next_obs (no gradients needed)
+            encoded_next_obs = self.encoder(next_obs)
             
-            q1_next_target, q2_next_target = self.critic_target(next_obs, next_state_actions)
+            # Target Actions
+            next_state_actions, next_state_log_pi, _ = self.actor.sample(encoded_next_obs)
+            
+            q1_next_target, q2_next_target = self.critic_target(encoded_next_obs, next_state_actions)
             min_q_next_target = torch.min(q1_next_target, q2_next_target) 
             
             # Entropy subtraction (Broadcasting scalar log_pi to vector Q)
@@ -332,7 +373,7 @@ class SACTrainer:
             next_q_value = rewards + (1 - dones) * self.cfg.gamma * min_q_next_target
             
         # Critic Update
-        q1, q2 = self.critic(obs, actions)
+        q1, q2 = self.critic(encoded_obs, actions)
         q1_loss = F.mse_loss(q1, next_q_value)
         q2_loss = F.mse_loss(q2, next_q_value)
         q_loss = q1_loss + q2_loss
@@ -341,9 +382,10 @@ class SACTrainer:
         q_loss.backward()
         self.q_optimizer.step()
         
-        # Actor Update
-        pi, log_pi, _ = self.actor.sample(obs)
-        q1_pi, q2_pi = self.critic(obs, pi)
+        # Actor Update (Detach encoded_obs to avoid changing Encoder with Policy gradient)
+        encoded_obs_detached = encoded_obs.detach()
+        pi, log_pi, _ = self.actor.sample(encoded_obs_detached)
+        q1_pi, q2_pi = self.critic(encoded_obs_detached, pi)
         min_q_pi = torch.min(q1_pi, q2_pi)
         
         # Sum vector Qs -> Scalar Q for optimization
@@ -372,20 +414,25 @@ class SACTrainer:
             "alpha": self.log_alpha.exp().item()
         }
 
-    def save(self, path=None):
-        path = path or self.cfg.save_path
+    def save(self, is_best=False):
+        # Assuming cfg.save_path handles best logic
+        path = self.cfg.save_path
+        if is_best:
+            path = path.replace('.pth', '_best.pth')
+            
         torch.save({
-            'actor': self.actor.state_dict(),
             'critic': self.critic.state_dict(),
-            'log_alpha': self.log_alpha
+            'actor': self.actor.state_dict(),
+            'encoder': self.encoder.state_dict()
         }, path)
-        print(f"Model saved to {path}")
-        
-    def load(self, path=None):
-        path = path or self.cfg.save_path
+
+    def load(self, path):
         checkpoint = torch.load(path)
-        self.actor.load_state_dict(checkpoint['actor'])
-        self.critic.load_state_dict(checkpoint['critic'])
+        self.critic.load_state_dict(checkpoint['critic'], strict=False)
+        self.critic_target = copy.deepcopy(self.critic)
+        self.actor.load_state_dict(checkpoint['actor'], strict=False)
+        if 'encoder' in checkpoint:
+            self.encoder.load_state_dict(checkpoint['encoder'])
         self.log_alpha = checkpoint['log_alpha']
 
 class Logger:
