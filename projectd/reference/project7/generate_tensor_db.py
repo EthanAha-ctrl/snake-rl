@@ -131,7 +131,7 @@ def main():
                 c_depth = random.randint(0, 9)
                 
                 # Generate exact Optical Focus Stack
-                blended_imgs, labels = generate_focus_stack(bg_gray, fg_gray, a_list, b_depth, c_depth)
+                blended_imgs, labels, sharpnesses = generate_focus_stack(bg_gray, fg_gray, a_list, b_depth, c_depth)
                 
                 # Prepare batch tensor for HRNet
                 batch_tensors = []
@@ -152,7 +152,8 @@ def main():
                     txn.put(key_str.encode('ascii'), tensor_data.tobytes())
                     
                     label_radius = labels[i]
-                    meta_info.append((key_str, label_radius, dict(a=i, b=b_depth, c=c_depth)))
+                    sharpness_grid = sharpnesses[i]
+                    meta_info.append((key_str, label_radius, sharpness_grid))
                     global_counter += 1
                 
                 # Periodic Commit to save memory

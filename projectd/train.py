@@ -5,8 +5,8 @@ import numpy as np
 
 # Switch to SAC
 from sac_trainer import SACConfig, SACTrainer
-from history_stacker import HistoryStacker, position_angle_from_obs
-from coc_env import CoCEnv
+from history_stacker import HistoryStacker
+from coc_sharpness_env import CoCEnv
 
 
 def make_env():
@@ -78,7 +78,9 @@ def train(config: SACConfig = None):
     # SAC Loop: Step by Step (Off-Policy)
     from sac_trainer import Logger
     logger = Logger()
-    
+
+    episode_transitions = []
+
     while trainingState.global_step < config.total_steps:
         # 1. Select Action
         current_stacked_obs = stacker.stacked()
@@ -91,54 +93,36 @@ def train(config: SACConfig = None):
             
         # 2. Step Env
         next_obs, reward, terminated, truncated, _ = env.step(action)
+
         done = terminated or truncated
         
         trainingState.global_step += 1
         trainingState.update_episode_stats(reward, done)
         
-        # 3. Handle Stacker for Next State
-        # We need "next_stacked_obs" for buffer
-        # This is tricky with history.
-        # Temp append to get next stack, but we need to keep stacker consistent for next loop iter.
-        # Actually stacker state evolves naturally.
-        # Current Stacker: H_t
-        # Action: a_t
-        # Next Obs: o_{t+1}
-        # Next Stacker should result in H_{t+1}
-        
-        # We perform append to get next stack
-        # (We will need to copy purely for buffer? No, simple append is fine because buffer stores copy)
-        # BUT: if done, we must handle next_obs correctly.
-        # In SAC, 'next_state' for terminal state matters.
-        # If not done: append (o_{t+1}, a_t).
-        # If done: we still append it to form the "terminal next state", 
-        # and THEN we reset stacker for the FUTURE steps.
-        
-        # NOTE: standard stacker.append updates internal state.
-        # We need the state BEFORE update as 'current_obs' (we have it: current_stacked_obs)
-        # We need state AFTER update as 'next_obs'
-        
         stacker.append(next_obs, action) 
         next_stacked_obs = stacker.stacked()
+
+        episode_transitions.append((current_stacked_obs, action, reward, next_stacked_obs, done))
         
-        # 4. Add to Buffer
-        # Action in buffer: flat array
-        trainer.replay_buffer.add(
-            current_stacked_obs, 
-            action, 
-            reward, 
-            next_stacked_obs, 
-            done
-        )
-        
-        # 5. Reset if Done
         if done:
+            # --- 混合采样逻辑 (Mixed Sampling) ---
+            keep_episode = True
+            # 如果 episode 长度 < 5，有 90% 的概率丢弃它，只保留 10% 的短平快经验
+            if len(episode_transitions) < 5 and trainingState.global_step >= config.start_steps:
+                if np.random.rand() > 0.1:  # 90% probability to discard
+                    keep_episode = False
+            
+            if keep_episode:
+                for transition in episode_transitions:
+                    trainer.replay_buffer.add(*transition)
+            
+            # Reset episode variables
+            episode_transitions = []
+            
             reset_obs, _ = env.reset()
             stacker.reset(reset_obs, default_obs=-1.0, default_action=-1.0)
             
-        # 6. Update Parameters
         if trainingState.global_step >= config.start_steps:
-            # Update multiple times per step? Usually 1
             for _ in range(config.updates_per_step):
                 losses = trainer.update_parameters(config.batch_size)
                 
@@ -168,16 +152,16 @@ def train(config: SACConfig = None):
 
 if __name__ == "__main__":
     config = SACConfig(
-        total_steps=50_000,
+        total_steps=1_500_000,
         start_steps=5000, # Warmup random
         history_len=10,
-        lr=3e-4,
+        lr=2e-4,
         gamma=0.1,
         tau=0.005,
-        alpha=0.2,
+        alpha=0.05,
         hidden_dim=256,
-        batch_size=32,
-        buffer_size=20_000,
+        batch_size=512,
+        buffer_size=100_000,
         save_path="sac_coc.pth",
     )
     train(config)

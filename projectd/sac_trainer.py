@@ -317,10 +317,9 @@ class SACTrainer:
         self.alpha_optimizer = optim.Adam([self.log_alpha], lr=self.cfg.lr)
 
     def select_action(self, obs: np.ndarray, evaluate=False):
-        # Obs: numpy (obs_dim,) - representing the flattened history tensor
+        # Obs: numpy (obs_dim,)
         obs = torch.as_tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
         
-        # Encode through Transformer Encoder
         with torch.no_grad():
             encoded_obs = self.encoder(obs)
         
@@ -354,11 +353,9 @@ class SACTrainer:
         # Sample a batch from memory
         obs, actions, rewards, next_obs, dones = self.replay_buffer.sample(batch_size)
         
-        # Run Encoder
         encoded_obs = self.encoder(obs)
         
         with torch.no_grad():
-            # Run Encoder for next_obs (no gradients needed)
             encoded_next_obs = self.encoder(next_obs)
             
             # Target Actions
@@ -381,9 +378,12 @@ class SACTrainer:
         
         self.q_optimizer.zero_grad()
         q_loss.backward()
+        # Gradient Clipping: Must include encoder because they share the optimizer!
+        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1.0) 
+        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), 1.0)
         self.q_optimizer.step()
         
-        # Actor Update (Detach encoded_obs to avoid changing Encoder with Policy gradient)
+        # Actor Update
         encoded_obs_detached = encoded_obs.detach()
         pi, log_pi, _ = self.actor.sample(encoded_obs_detached)
         q1_pi, q2_pi = self.critic(encoded_obs_detached, pi)
@@ -396,6 +396,7 @@ class SACTrainer:
         
         self.policy_optimizer.zero_grad()
         policy_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 1.0) # Gradient Clipping
         self.policy_optimizer.step()
         
         # Alpha Update
@@ -424,7 +425,8 @@ class SACTrainer:
         torch.save({
             'critic': self.critic.state_dict(),
             'actor': self.actor.state_dict(),
-            'encoder': self.encoder.state_dict()
+            'encoder': self.encoder.state_dict(),
+            'log_alpha': self.log_alpha
         }, path)
 
     def load(self, path):
@@ -434,7 +436,8 @@ class SACTrainer:
         self.actor.load_state_dict(checkpoint['actor'], strict=False)
         if 'encoder' in checkpoint:
             self.encoder.load_state_dict(checkpoint['encoder'])
-        self.log_alpha = checkpoint['log_alpha']
+        if 'log_alpha' in checkpoint:
+            self.log_alpha = checkpoint['log_alpha']
 
 class Logger:
     def log(self, stats: Dict[str, float]) -> None:

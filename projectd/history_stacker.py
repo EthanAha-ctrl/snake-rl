@@ -3,9 +3,8 @@ from typing import Deque, Union
 import numpy as np
 
 
-# Only use position and angle from the raw CartPole observation
-def position_angle_from_obs(obs: np.ndarray) -> np.ndarray:
-    return np.array([obs[0], obs[2]], dtype=np.float32)
+
+# Helper removed
 
 
 class HistoryStacker:

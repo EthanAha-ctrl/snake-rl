@@ -135,6 +135,7 @@ def generate_focus_stack(bg_gray, fg_gray, a_list, b_depth, c_depth):
     Returns:
         blended_imgs: List of 10 blended grayscale numpy images (TARGET_H x TARGET_W, uint8).
         labels: List of 10 absolute foreground blur radii for each image.
+        sharpnesses: List of 10 computed sharpness grids (15x20) for each image.
     """
     h, w = bg_gray.shape
     mask = create_random_polygon_mask(h, w)
@@ -150,16 +151,17 @@ def generate_focus_stack(bg_gray, fg_gray, a_list, b_depth, c_depth):
     fg_premult_img_linear = fg_gray_linear * (mask.astype(np.float32) / 255.0)
     
     # Blur the foreground linear energy
-    fg_blurred_imgs, _ = core_blur(fg_premult_img_linear, zeros, fg_radii)
+    fg_blurred_imgs, fg_sharpness = core_blur(fg_premult_img_linear, zeros, fg_radii)
     
     # Blur the background linear image
-    bg_imgs, _ = core_blur(bg_gray_linear, zeros, bg_radii)
+    bg_imgs, bg_sharpness = core_blur(bg_gray_linear, zeros, bg_radii)
     
     # Blur the mask to get foreground alpha (occlusion strength)
     mask_blurred, _ = core_blur(mask, zeros, fg_radii)
     
     blended_imgs = []
     labels = []
+    sharpnesses = []
     
     for i in range(10):
         # Result arrays from core_blur are uint8 0-255, scale back to 0-1 for precision blending
@@ -179,4 +181,8 @@ def generate_focus_stack(bg_gray, fg_gray, a_list, b_depth, c_depth):
         blended_imgs.append(blended)
         labels.append(int(fg_radii[i])) # The label is the absolute blur radius of the foreground
         
-    return blended_imgs, labels
+        # Calculate final sharpness on the final blended_srgb image
+        final_sharpness = calculate_sharpness_grid(blended_srgb, kernel_size=5)
+        sharpnesses.append(final_sharpness)
+        
+    return blended_imgs, labels, sharpnesses
