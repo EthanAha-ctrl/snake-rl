@@ -206,13 +206,13 @@ if __name__ == "__main__":
         total_steps=1_500_000,
         start_steps=5000, # Warmup random
         history_len=10,
-        lr=2e-4,
+        lr=5e-5,  # Lower learning rate for fine-tuning spatial sharpness
         gamma=0.1,
         tau=0.005,
         alpha=0.05,
         hidden_dim=256,
-        batch_size=32,
-        buffer_size=20_000,
+        batch_size=256,
+        buffer_size=50_000,
         save_path="sac_coc.pth",
     )
     train(config)

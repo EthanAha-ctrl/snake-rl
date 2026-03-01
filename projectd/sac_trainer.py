@@ -274,8 +274,8 @@ class SACTrainer:
         # 1. Initialize Encoder
         from transformer_encoder import SpatioTemporalEncoder
         self.encoder = SpatioTemporalEncoder(
-            history_len=10, channels=10, H=15, W=20, 
-            d_model=64, nhead=1, num_layers=2, out_dim=256, action_history_dim=20
+            history_len=10, channels=11, H=15, W=20, 
+            d_model=16, nhead=1, num_layers=2, out_dim=256, action_history_dim=20
         ).to(self.device)
         
         # 2. Networks (Load old dimensions to match mlp_best.pth from projectc)

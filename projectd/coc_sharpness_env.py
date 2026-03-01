@@ -34,10 +34,10 @@ class CoCEnv(my_gym.Env):
             dtype=np.float32
         )
         
-        # Observation space: 10x15x20 flattened + 1 sharpness scalar (3001 dimensions)
+        # Observation space: 10x15x20 flattened vision + 15x20 flattened sharpness (3000 + 300 = 3300 dimensions)
         self.observation_space = my_gym.Box(
-            low=np.zeros((3001,), dtype=np.float32), 
-            high=np.ones((3001,), dtype=np.float32), 
+            low=np.zeros((3300,), dtype=np.float32), 
+            high=np.ones((3300,), dtype=np.float32), 
             dtype=np.float32
         )
         
@@ -150,13 +150,20 @@ class CoCEnv(my_gym.Env):
         radius_obs = val / 10.0 # Normalize to [0, 1]
 
         s_mix = s_floor * weight_floor + s_ceil * weight_ceil
+        # We need the global scalar mean to feed the Old Expert MLP in the 'info' dict
         scalar_sharpness = np.mean(s_mix) / 640.0 / 480.0
-
-        sharpness_obs = scalar_sharpness * self.sharpness_scale
-
-        obs_tensor = np.concatenate([[sharpness_obs], t_mix.numpy().flatten()], dtype=np.float32)
         
-        return obs_tensor, {"sharpness": sharpness_obs, "expected_radius": radius_obs}
+        # Scale the scalar for the expert
+        info_sharpness = scalar_sharpness * self.sharpness_scale
+
+        # The Transformer needs the FULL 15x20 matrix, normalized similarly
+        spatial_sharpness_obs = (s_mix / 640.0 / 480.0) * self.sharpness_scale
+        
+        # Observation: [11 channels, 15 height, 20 width] flattened
+        stacked = np.concatenate([spatial_sharpness_obs[np.newaxis, :, :], t_mix.numpy()], axis=0)
+        obs_tensor = stacked.flatten().astype(np.float32)
+        
+        return obs_tensor, {"sharpness": info_sharpness, "expected_radius": radius_obs}
 
     def reset(self, seed=None, options=None):
         if seed is not None:
