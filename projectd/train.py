@@ -16,7 +16,7 @@ def make_env():
     return CoCEnv(render_mode="rgb_array")
 
 def collect_expert_rollouts(env, new_trainer, num_episodes=500):
-    print(f"Collecting {num_episodes} expert rollouts into Replay Buffer...")
+    #print(f"Collecting {num_episodes} expert rollouts into Replay Buffer...")
     
     # Dynamically load the old MLP Actor
     sys.path.insert(0, os.path.join("reference", "projectc"))
@@ -31,9 +31,10 @@ def collect_expert_rollouts(env, new_trainer, num_episodes=500):
     if os.path.exists(checkpoint_path):
         checkpoint = torch.load(checkpoint_path, map_location=device)
         expert_actor.load_state_dict(checkpoint['actor'])
-        print(f"Expert Actor loaded from {checkpoint_path}")
+        #print(f"Expert Actor loaded from {checkpoint_path}")
     else:
-        print(f"Warning: Expert checkpoint not found at {checkpoint_path}.")
+        pass
+        #print(f"Warning: Expert checkpoint not found at {checkpoint_path}.")
         
     expert_actor.eval()
     
@@ -91,8 +92,8 @@ def collect_expert_rollouts(env, new_trainer, num_episodes=500):
                 new_trainer.replay_buffer.add(*transition)
                 total_transitions += 1
                 
-    print(f"Expert collection finished. {success_count}/{num_episodes} successful episodes.")
-    print(f"Added {total_transitions} high-quality transitions to the Replay Buffer.")
+    #print(f"Expert collection finished. {success_count}/{num_episodes} successful episodes.")
+    #print(f"Added {total_transitions} high-quality transitions to the Replay Buffer.")
 
 class TrainingState:
     def __init__(self):
