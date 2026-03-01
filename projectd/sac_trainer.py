@@ -447,7 +447,8 @@ class SACTrainer:
         loss_trigger = F.cross_entropy(logits, expert_trigger.long())
         
         # Total BC Loss
-        total_loss = loss_guess + loss_trigger
+        # Balance Scales: MSE target < 0.01, CE target < 0.1
+        total_loss = 10.0 * loss_guess + loss_trigger
         
         # Update Encoder & Actor bridge layer
         self.bc_optimizer.zero_grad()
