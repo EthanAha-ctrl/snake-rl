@@ -136,3 +136,39 @@ input: offline dataset of the sharpness, 10x20x15, and tensor 10x20x15x10 from 1
 10 position of CoC
 20x15 spatial resolution of sharpness, spatial resolution of the tensor
 10 one-hot encoding of the class of CoC
+
+## Project d, CoC + Sharpness + SpatialTemporal Transformer: with foreground and background blur
+
+2.5D scene changed from single plane to 2 planes: foreground and background.
+
+the output from hrnet: an 15x20x10 tensor is concatenated with 15x20x1 sharpness value, into a 15x20x11 tensor.
+
+This tensor is stacked over the 10 history frames: giving 15x20x10 tokens, with 11 dim token.
+
+This thing is fed into the 2 layer transformer.
+
+A linear projector makes the 11 dim token into 32 dim.
+
+Passing through a Qwen3-vl alike spatial temporal position encoding, followed by 4x FFN, single head attention, 2 layers.
+
+Then followed by a fully-connection layer to 256 dim vector.
+
+Then passing through the freezed MLP layers.
+
+The training is a supervised behavior cloning: loss = 100 * mse(new_guess, old_guess) + logistic(new_trigger, old_trigger)
+
+The training takes exessively long time: 200K-ish steps in 16 hours on a single 5090 card.
+
+The resulting performance is somewhat reasonable: 4 failures out of 10 episode.
+
+## Project e, CoC + Sharpness + SpatialTemporal Transformer: MLP fine tune: Project d
+
+Based on project d, freeze transformer and unfreeze MLP. Let MLP learns the a) noise of transformer; b) can't fully trust and stop by looking at the sharpness only.
+
+## Project f, replacing ideal circular CoC with captured CoC
+
+(TBD)
+
+## Project g, quantization to 8 bit and port to ONNX runtime
+
+(TBD)
