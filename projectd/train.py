@@ -176,17 +176,17 @@ def train(config: SACConfig = None):
         
         # 2. Train on the full Buffer
         if trainer.replay_buffer.size > config.batch_size:
-            # Train intensely on the new data
+            # Train intensely on the new data using Behavior Cloning
             for _ in range(new_steps): # Update 1 time per step collected
-                losses = trainer.update_parameters(config.batch_size)
+                losses = trainer.update_bc(config.batch_size)
                 
             if trainingState.global_step % 250 < 50: # Log roughly every 250 steps (approx 5 loops)
                 log_stats = trainingState.get_log_stats()
                 log_stats.update(losses)
                 
-                # We don't have real "student" rewards to log, 
-                # so the score indicates the network's internal loss minimization
-                score = - (losses["loss_q"] + losses["loss_pi"]) 
+                # We don't have real "student" rewards or SAC losses, 
+                # so the score indicates the Behavior Cloning loss minimization
+                score = -losses["loss_bc"] 
                 log_stats["score"] = score
                 
                 if score > best_score:

@@ -311,6 +311,12 @@ class SACTrainer:
         self.q_optimizer = optim.Adam(q_params, lr=self.cfg.lr)
         self.policy_optimizer = optim.Adam(policy_params, lr=self.cfg.lr)
         
+        # Behavior Cloning Optimizer (Train Encoder + Actor's new first layer)
+        self.bc_optimizer = optim.Adam(
+            list(self.encoder.parameters()) + list(self.actor.shared_net[0].parameters()), 
+            lr=self.cfg.lr
+        )
+        
         # Automatic Entropy Tuning (Optional)
         self.target_entropy = -torch.prod(torch.Tensor([action_dim]).to(self.device)).item()
         self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
@@ -414,6 +420,43 @@ class SACTrainer:
             "loss_q": q_loss.item(),
             "loss_pi": policy_loss.item(),
             "alpha": self.log_alpha.exp().item()
+        }
+
+    def update_bc(self, batch_size) -> Dict[str, float]:
+        """
+        Pure Behavior Cloning step. Bypasses the Critic and SAC logic.
+        Uses the expert's actions in the replay buffer as targets.
+        """
+        obs, actions, rewards, next_obs, dones = self.replay_buffer.sample(batch_size)
+        
+        # Forward pass through Encoder + Actor
+        encoded_obs = self.encoder(obs)
+        mean, std, logits = self.actor(encoded_obs)
+        
+        # Split Expert Actions
+        expert_guess = actions[:, 0].unsqueeze(1) # [Batch, 1], value between 0 and 1
+        expert_trigger = actions[:, 1]            # [Batch], integer class (0, 1, 2)
+        
+        # 1. Guess Loss (Continuous -> MSE)
+        # Note: 'mean' from actor is pre-sigmoid. The environment action expects Post-sigmoid [0, 1].
+        pred_guess = torch.sigmoid(mean)
+        loss_guess = F.mse_loss(pred_guess, expert_guess)
+        
+        # 2. Trigger Loss (Discrete -> CrossEntropy)
+        loss_trigger = F.cross_entropy(logits, expert_trigger.long())
+        
+        # Total BC Loss
+        total_loss = loss_guess + loss_trigger
+        
+        # Update Encoder & Actor bridge layer
+        self.bc_optimizer.zero_grad()
+        total_loss.backward()
+        self.bc_optimizer.step()
+        
+        return {
+            "loss_guess": loss_guess.item(),
+            "loss_trigger": loss_trigger.item(),
+            "loss_bc": total_loss.item()
         }
 
     def save(self, is_best=False):
