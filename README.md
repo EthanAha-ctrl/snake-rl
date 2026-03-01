@@ -161,6 +161,9 @@ The training takes exessively long time: 200K-ish steps in 16 hours on a single 
 
 The resulting performance is somewhat reasonable: 4 failures out of 10 episode.
 
+<img width="897" height="280" alt="image" src="https://github.com/user-attachments/assets/a156b19d-7656-4567-976d-dc17807ef416" />
+
+
 ## Project e, CoC + Sharpness + SpatialTemporal Transformer: MLP fine tune: Project d
 
 Based on project d, freeze transformer and unfreeze MLP. Let MLP learns the a) noise of transformer; b) can't fully trust and stop by looking at the sharpness only.
