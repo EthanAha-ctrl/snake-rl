@@ -65,7 +65,7 @@ def evaluate():
             action = trainer.select_action(stacked_obs, evaluate=True)
                 
             # Step
-            next_obs, reward, terminated, truncated, _ = env.step(action)
+            next_obs, reward, terminated, truncated, info = env.step(action)
             total_reward += reward
             step += 1
             
@@ -73,9 +73,8 @@ def evaluate():
             # action is typically [guess, trigger_prob] or just [guess] depending on dim
             # Let's assume action[0] is the guess/position we care about for X-axis
             # next_obs is [sharpness]
-            
             current_guess = float(action[0])
-            current_sharpness = float(next_obs[0])
+            current_sharpness = float(info.get("sharpness", 0.0))
             
             episode_actions.append(current_guess)
             episode_obs.append(current_sharpness)
