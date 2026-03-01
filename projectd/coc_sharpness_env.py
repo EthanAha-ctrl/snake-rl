@@ -147,14 +147,16 @@ class CoCEnv(my_gym.Env):
         
         # Weighted Average
         t_mix = t_floor * weight_floor + t_ceil * weight_ceil
-        # radius_obs = self._compute_expected_radius_from_tensor(t_mix) / 10.0 # Normalize to [0, 1]
+        radius_obs = val / 10.0 # Normalize to [0, 1]
 
         s_mix = s_floor * weight_floor + s_ceil * weight_ceil
         scalar_sharpness = np.mean(s_mix) / 640.0 / 480.0
 
         sharpness_obs = scalar_sharpness * self.sharpness_scale
 
-        return np.concatenate([[sharpness_obs], t_mix.numpy().flatten()], dtype=np.float32)
+        obs_tensor = np.concatenate([[sharpness_obs], t_mix.numpy().flatten()], dtype=np.float32)
+        
+        return obs_tensor, {"sharpness": sharpness_obs, "expected_radius": radius_obs}
 
     def reset(self, seed=None, options=None):
         if seed is not None:
@@ -176,8 +178,8 @@ class CoCEnv(my_gym.Env):
         '''
         self.fsm = "coarse search"
         self.fsm_overshoot_count = 0
-
-        return self._get_interpolated_obs(self.prev_diff * 10.0), {}
+        obs, info = self._get_interpolated_obs(self.prev_diff * 10.0)
+        return obs, info
 
     def step(self, command):
         if isinstance(command, np.ndarray):
@@ -194,7 +196,7 @@ class CoCEnv(my_gym.Env):
 
         guess = max(0.0, min(1.0, guess))
         absolute_diff = abs(guess - self.ground_truth)
-        obs = self._get_interpolated_obs(absolute_diff * 10.0)
+        obs, info = self._get_interpolated_obs(absolute_diff * 10.0)
         
         self.current_step += 1
         improvement = self.prev_diff - absolute_diff
@@ -253,7 +255,7 @@ class CoCEnv(my_gym.Env):
         total_reward = np.array([r_guess, r_trigger], dtype=np.float32)
         self.prev_position = guess
         self.first_trial = False
-        return obs, total_reward, terminated, False, {}
+        return obs, total_reward, terminated, False, info
 
     def render(self):
         if self.render_mode == "rgb_array":
