@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from typing import Tuple, Dict, List
 import copy
+from torch.utils.tensorboard import SummaryWriter
 
 class SACConfig:
     def __init__(
@@ -483,9 +484,18 @@ class SACTrainer:
             self.log_alpha = checkpoint['log_alpha']
 
 class Logger:
+    def __init__(self, log_dir="runs"):
+        self.writer = SummaryWriter(log_dir)
+
     def log(self, stats: Dict[str, float]) -> None:
         print("------------------------------------------")
         print("| train/                  |             |")
+        
+        # Determine the global step for Tensorboard
+        step = int(stats.get('total_timesteps', 0))
+        if step == 0 and 'iterations' in stats:
+            step = int(stats['iterations'])
+            
         for k, v in stats.items():
              # Check if it is a Tensor or Numpy Array
              is_tensor = hasattr(v, 'cpu') # torch tensor
@@ -503,6 +513,7 @@ class Logger:
                  v_arr = np.array(v).flatten()
                  for i, val in enumerate(v_arr):
                      print(f"|    {k}_{i:<8} | {val:<12.4f}|")
+                     self.writer.add_scalar(f"train/{k}_{i}", val, step)
              else:
                  # Scalar handling
                  if hasattr(v, 'item'):
@@ -510,4 +521,6 @@ class Logger:
                  else:
                      val = v
                  print(f"|    {k:<20} | {val:<12.4f}|")
+                 self.writer.add_scalar(f"train/{k}", val, step)
+                 
         print("------------------------------------------")
