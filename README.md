@@ -175,3 +175,7 @@ Based on project d, freeze transformer and unfreeze MLP. Let MLP learns the a) n
 ## Project g, quantization to 8 bit and port to ONNX runtime
 
 (TBD)
+
+## Project h, video mode, emphasis on smoothness and motion tracking
+
+(TBD)
