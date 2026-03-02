@@ -348,8 +348,11 @@ class SACTrainer:
         # Obs: numpy (obs_dim,)
         obs = torch.as_tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
         
+        device_type = 'cuda' if self.device.type == 'cuda' else 'cpu'
         with torch.no_grad():
-            encoded_obs = self.encoder(obs)
+            with torch.autocast(device_type=device_type, dtype=torch.float16, enabled=(device_type == 'cuda')):
+                encoded_obs = self.encoder(obs)
+            encoded_obs = encoded_obs.float()
         
         with torch.no_grad():
             if evaluate:
@@ -381,10 +384,15 @@ class SACTrainer:
         # Sample a batch from memory
         obs, actions, rewards, next_obs, dones = self.replay_buffer.sample(batch_size)
         
-        encoded_obs = self.encoder(obs)
+        device_type = 'cuda' if self.device.type == 'cuda' else 'cpu'
+        with torch.autocast(device_type=device_type, dtype=torch.float16, enabled=(device_type == 'cuda')):
+            encoded_obs = self.encoder(obs)
+        encoded_obs = encoded_obs.float()
         
         with torch.no_grad():
-            encoded_next_obs = self.encoder(next_obs)
+            with torch.autocast(device_type=device_type, dtype=torch.float16, enabled=(device_type == 'cuda')):
+                encoded_next_obs = self.encoder(next_obs)
+            encoded_next_obs = encoded_next_obs.float()
             
             # Target Actions
             next_state_actions, next_state_log_pi, _ = self.actor.sample(encoded_next_obs)
@@ -452,8 +460,13 @@ class SACTrainer:
         """
         obs, actions, rewards, next_obs, dones = self.replay_buffer.sample(batch_size)
         
+        device_type = 'cuda' if self.device.type == 'cuda' else 'cpu'
+        
         # Forward pass through Encoder + Actor
-        encoded_obs = self.encoder(obs)
+        with torch.autocast(device_type=device_type, dtype=torch.float16, enabled=(device_type == 'cuda')):
+            encoded_obs = self.encoder(obs)
+        encoded_obs = encoded_obs.float()
+        
         mean, std, logits = self.actor(encoded_obs)
         
         # Split Expert Actions

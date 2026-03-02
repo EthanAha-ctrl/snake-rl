@@ -81,6 +81,15 @@ def train(config: SACConfig = None):
         print("Loaded BC pre-trained weights from sac_transformer_best.pth successfully.")
     except Exception as e:
         print(f"Failed to load BC weights: {e}")
+        
+    if torch.cuda.is_available() and config.phase == "RL_A":
+        try:
+            from torch import _dynamo
+            _dynamo.config.suppress_errors = True
+            trainer.encoder = torch.compile(trainer.encoder)
+            print("Successfully compiled Transformer Encoder for speedup.")
+        except Exception as e:
+            print(f"Skipping torch.compile: {e}")
     
     # --- RL Phase A Mode ---
     print(f"Running in {config.phase} Mode.")
