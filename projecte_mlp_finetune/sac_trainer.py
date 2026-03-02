@@ -21,7 +21,6 @@ class SACConfig:
         start_steps: int = 1000, # Random exploration steps
         total_steps: int = 200_000,
         rollout_horizon: int = 1, # SAC is off-policy, horizon is 1 usually or meaningless
-        rollout_horizon: int = 1, # SAC is off-policy, horizon is 1 usually or meaningless
         history_len: int = 4,
         save_path: str = "sac_model.pth",
         phase: str = "BC",
@@ -36,7 +35,6 @@ class SACConfig:
         self.updates_per_step = updates_per_step
         self.start_steps = start_steps
         self.total_steps = total_steps
-        self.rollout_horizon = rollout_horizon
         self.rollout_horizon = rollout_horizon
         self.history_len = history_len
         self.save_path = save_path
