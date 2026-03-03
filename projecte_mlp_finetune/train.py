@@ -75,25 +75,6 @@ def train(config: SACConfig = None):
     
     trainer = SACTrainer(config, obs_dim=input_dim, action_dim=action_dim)
     
-    # Load the perfectly pre-trained BC weights
-    try:
-        trainer.load("sac_transformer_best.pth")
-        print("Loaded BC pre-trained weights from sac_transformer_best.pth successfully.")
-    except Exception as e:
-        print(f"Failed to load BC weights: {e}")
-        
-    if torch.cuda.is_available():
-        try:
-            from torch import _dynamo
-            _dynamo.config.suppress_errors = True
-            trainer.encoder = torch.compile(trainer.encoder, backend="aot_eager")
-            print("Successfully compiled Transformer Encoder for speedup.")
-        except Exception as e:
-            print(f"Skipping torch.compile: {e}")
-    
-    # --- RL Mode ---
-    print("Running in RL Mode: Transformer Encoder is FROZEN, MLPs are UNFROZEN.")
-    
     trainingState = TrainingState()
     
     best_score = -float('inf')
