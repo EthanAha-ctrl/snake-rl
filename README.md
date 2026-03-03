@@ -139,6 +139,9 @@ input: offline dataset of the sharpness, 10x20x15, and tensor 10x20x15x10 from 1
 
 ## Project d, CoC + Sharpness + SpatialTemporal Transformer: with foreground and background blur
 
+has bug:
+https://github.com/EthanAha-ctrl/snake-rl/issues/2
+
 2.5D scene changed from single plane to 2 planes: foreground and background.
 
 the output from hrnet: an 15x20x10 tensor is concatenated with 15x20x1 sharpness value, into a 15x20x11 tensor.
