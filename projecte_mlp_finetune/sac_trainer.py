@@ -511,11 +511,15 @@ class SACTrainer:
 
     def load(self, path):
         checkpoint = torch.load(path)
-        self.critic.load_state_dict(checkpoint['critic'], strict=False)
+        
+        def strip_orig_mod(state_dict):
+            return {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
+
+        self.critic.load_state_dict(strip_orig_mod(checkpoint['critic']), strict=False)
         self.critic_target = copy.deepcopy(self.critic)
-        self.actor.load_state_dict(checkpoint['actor'], strict=False)
+        self.actor.load_state_dict(strip_orig_mod(checkpoint['actor']), strict=False)
         if 'encoder' in checkpoint:
-            self.encoder.load_state_dict(checkpoint['encoder'])
+            self.encoder.load_state_dict(strip_orig_mod(checkpoint['encoder']))
         if 'log_alpha' in checkpoint:
             self.log_alpha = checkpoint['log_alpha']
 
