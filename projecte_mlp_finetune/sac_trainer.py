@@ -22,8 +22,7 @@ class SACConfig:
         total_steps: int = 200_000,
         rollout_horizon: int = 1, # SAC is off-policy, horizon is 1 usually or meaningless
         history_len: int = 4,
-        save_path: str = "sac_model.pth",
-        phase: str = "BC",
+        save_path: str = "sac_model.pth"
     ):
         self.lr = lr
         self.gamma = gamma
@@ -38,7 +37,6 @@ class SACConfig:
         self.rollout_horizon = rollout_horizon
         self.history_len = history_len
         self.save_path = save_path
-        self.phase = phase
 
 # Replay Buffer
 class ReplayBuffer:
@@ -280,64 +278,42 @@ class SACTrainer:
             d_model=32, nhead=1, num_layers=2, out_dim=256, action_history_dim=20
         ).to(self.device)
         
+        # Load extracted purely frozen Transformer weights
+        import os
+        transformer_path = "transformer_only.pth"
+        if os.path.exists(transformer_path):
+            print(f"Loading frozen Transformer features from {transformer_path}...")
+            enc_checkpoint = torch.load(transformer_path, map_location=self.device)
+            self.encoder.load_state_dict(enc_checkpoint['encoder'])
+        else:
+            print(f"WARNING: {transformer_path} not found. Transformer is randomly initialized!")
+        
         # 2. Networks (Load old dimensions to match mlp_best.pth from projectc)
         old_obs_dim = 40
         self.critic = Critic(old_obs_dim, action_dim, self.cfg.hidden_dim).to(self.device)
         self.actor = Actor(old_obs_dim, action_dim, self.cfg.hidden_dim).to(self.device)
         
-        # Try to load reference/projectc/mlp_best.pth to freeze it
-        import os
-        pretrained_mlp_path = os.path.join("reference", "projectc", "mlp_best.pth")
-        if os.path.exists(pretrained_mlp_path):
-            print(f"Loading frozen features from {pretrained_mlp_path}...")
-            checkpoint = torch.load(pretrained_mlp_path, map_location=self.device)
-            self.critic.load_state_dict(checkpoint['critic'], strict=False)
-            self.actor.load_state_dict(checkpoint['actor'], strict=False)
+        # We are training from scratch, no longer loading reference/projectc/mlp_best.pth
 
-        # 3. Replace the first layers to bridge from Encoder's 256 to hidden_dim 256
-        self.critic.shared_net_1[0] = nn.Linear(256 + action_dim, self.cfg.hidden_dim).to(self.device)
-        self.critic.shared_net_2[0] = nn.Linear(256 + action_dim, self.cfg.hidden_dim).to(self.device)
-        self.actor.shared_net[0] = nn.Linear(256, self.cfg.hidden_dim).to(self.device)
+        # 3. Replace the first layers to bridge from Encoder's 52 (32+20) to hidden_dim 256
+        # Previous projectc was 40 dim, so 52 dim is a very sweet spot for rapid RL learning
+        self.critic.shared_net_1[0] = nn.Linear(52 + action_dim, self.cfg.hidden_dim).to(self.device)
+        self.critic.shared_net_2[0] = nn.Linear(52 + action_dim, self.cfg.hidden_dim).to(self.device)
+        self.actor.shared_net[0] = nn.Linear(52, self.cfg.hidden_dim).to(self.device)
         
         self.critic_target = copy.deepcopy(self.critic)
         
-        # 4. Phase Control & Optimizers
-        if self.cfg.phase == "RL_A":
-            print(f"--- INIT PHASE RL_A ---")
-            print("Freezing Encoder, Unfreezing MLPs...")
-            for p in self.encoder.parameters(): p.requires_grad = False
-            for p in self.critic.parameters(): p.requires_grad = True
-            for p in self.actor.parameters(): p.requires_grad = True
-            
-            q_params = list(self.critic.parameters())
-            policy_params = list(self.actor.parameters())
-            
-            self.q_optimizer = optim.Adam(q_params, lr=self.cfg.lr)
-            self.policy_optimizer = optim.Adam(policy_params, lr=self.cfg.lr)
-            self.bc_optimizer = None
-        else:
-            # Phase BC Optimizers (We optimize encoder + replacing bridge layer of MLPs)
-            for p in self.critic.parameters(): p.requires_grad = False
-            for p in self.actor.parameters(): p.requires_grad = False
-            # Ensure bridge layers are trainable
-            for p in self.critic.shared_net_1[0].parameters(): p.requires_grad = True
-            for p in self.critic.shared_net_2[0].parameters(): p.requires_grad = True
-            for p in self.actor.shared_net[0].parameters(): p.requires_grad = True
-            for p in self.encoder.parameters(): p.requires_grad = True
-            
-            q_params = list(self.encoder.parameters()) + \
-                       list(self.critic.shared_net_1[0].parameters()) + \
-                       list(self.critic.shared_net_2[0].parameters())
-            policy_params = list(self.actor.shared_net[0].parameters())
-            
-            self.q_optimizer = optim.Adam(q_params, lr=self.cfg.lr)
-            self.policy_optimizer = optim.Adam(policy_params, lr=self.cfg.lr)
-            
-            # Behavior Cloning Optimizer (Train Encoder + Actor's new first layer)
-            self.bc_optimizer = optim.Adam(
-                list(self.encoder.parameters()) + list(self.actor.shared_net[0].parameters()), 
-                lr=self.cfg.lr
-            )
+        # 4. Optimizers
+        print("Freezing Encoder, Unfreezing MLPs...")
+        for p in self.encoder.parameters(): p.requires_grad = False
+        for p in self.critic.parameters(): p.requires_grad = True
+        for p in self.actor.parameters(): p.requires_grad = True
+        
+        q_params = list(self.critic.parameters())
+        policy_params = list(self.actor.parameters())
+        
+        self.q_optimizer = optim.Adam(q_params, lr=self.cfg.lr)
+        self.policy_optimizer = optim.Adam(policy_params, lr=self.cfg.lr)
         
         # Automatic Entropy Tuning (Optional)
         self.target_entropy = -torch.prod(torch.Tensor([action_dim]).to(self.device)).item()
@@ -414,10 +390,8 @@ class SACTrainer:
         
         self.q_optimizer.zero_grad()
         q_loss.backward()
-        # Gradient Clipping: Must include encoder because they share the optimizer!
-        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1.0) 
-        if self.cfg.phase != "RL_A":
-            torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), 1.0)
+        # Gradient Clipping
+        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1.0)
         self.q_optimizer.step()
         
         # Actor Update
@@ -451,49 +425,6 @@ class SACTrainer:
             "loss_q": q_loss.item(),
             "loss_pi": policy_loss.item(),
             "alpha": self.log_alpha.exp().item()
-        }
-
-    def update_bc(self, batch_size) -> Dict[str, float]:
-        """
-        Pure Behavior Cloning step. Bypasses the Critic and SAC logic.
-        Uses the expert's actions in the replay buffer as targets.
-        """
-        obs, actions, rewards, next_obs, dones = self.replay_buffer.sample(batch_size)
-        
-        device_type = 'cuda' if self.device.type == 'cuda' else 'cpu'
-        
-        # Forward pass through Encoder + Actor
-        with torch.autocast(device_type=device_type, dtype=torch.float16, enabled=(device_type == 'cuda')):
-            encoded_obs = self.encoder(obs)
-        encoded_obs = encoded_obs.float()
-        
-        mean, std, logits = self.actor(encoded_obs)
-        
-        # Split Expert Actions
-        expert_guess = actions[:, 0].unsqueeze(1) # [Batch, 1], value between 0 and 1
-        expert_trigger = actions[:, 1]            # [Batch], integer class (0, 1, 2)
-        
-        # 1. Guess Loss (Continuous -> MSE)
-        # Note: 'mean' from actor is pre-sigmoid. The environment action expects Post-sigmoid [0, 1].
-        pred_guess = torch.sigmoid(mean)
-        loss_guess = F.mse_loss(pred_guess, expert_guess)
-        
-        # 2. Trigger Loss (Discrete -> CrossEntropy)
-        loss_trigger = F.cross_entropy(logits, expert_trigger.long())
-        
-        # Total BC Loss
-        # Balance Scales: MSE target < 0.01, CE target < 0.1
-        total_loss = 10.0 * loss_guess + loss_trigger
-        
-        # Update Encoder & Actor bridge layer
-        self.bc_optimizer.zero_grad()
-        total_loss.backward()
-        self.bc_optimizer.step()
-        
-        return {
-            "loss_guess": loss_guess.item(),
-            "loss_trigger": loss_trigger.item(),
-            "loss_bc": total_loss.item()
         }
 
     def save(self, is_best=False):

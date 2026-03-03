@@ -82,19 +82,17 @@ def train(config: SACConfig = None):
     except Exception as e:
         print(f"Failed to load BC weights: {e}")
         
-    if torch.cuda.is_available() and config.phase == "RL_A":
+    if torch.cuda.is_available():
         try:
             from torch import _dynamo
             _dynamo.config.suppress_errors = True
-            trainer.encoder = torch.compile(trainer.encoder)
+            trainer.encoder = torch.compile(trainer.encoder, backend="aot_eager")
             print("Successfully compiled Transformer Encoder for speedup.")
         except Exception as e:
             print(f"Skipping torch.compile: {e}")
     
-    # --- RL Phase A Mode ---
-    print(f"Running in {config.phase} Mode.")
-    if config.phase == "RL_A":
-        print("The Transformer Encoder is FROZEN. The Actor/Critic MLPs are UNFROZEN.")
+    # --- RL Mode ---
+    print("Running in RL Mode: Transformer Encoder is FROZEN, MLPs are UNFROZEN.")
     
     trainingState = TrainingState()
     
@@ -153,7 +151,7 @@ def train(config: SACConfig = None):
             for _ in range(config.updates_per_step):
                 losses = trainer.update_parameters(config.batch_size)
                 
-            if trainingState.global_step % 250 == 0:
+            if trainingState.global_step % 1000 == 0:
                 log_stats = trainingState.get_log_stats()
                 log_stats.update(losses)
                 
@@ -179,17 +177,16 @@ def train(config: SACConfig = None):
 
 if __name__ == "__main__":
     config = SACConfig(
-        total_steps=500_000,
-        start_steps=512, # Warmup random
+        total_steps=1_500_000,
+        start_steps=5000, # Warmup random
         history_len=10,
-        lr=1e-5,
+        lr=2e-4,
         gamma=0.1,
         tau=0.005,
-        alpha=0.01,
+        alpha=0.05,
         hidden_dim=256,
         batch_size=512,
-        buffer_size=200_000,
+        buffer_size=100_000,
         save_path="sac_coc.pth",
-        phase="RL_A",
     )
     train(config)

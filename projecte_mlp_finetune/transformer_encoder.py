@@ -79,9 +79,9 @@ class SpatioTemporalEncoder(nn.Module):
         cls_out = encoded_seq[:, 0, :] # [B, 64]
         
         # 9. Concatenate with Action History
-        final_feat = torch.cat([cls_out, action_feat], dim=1) # [B, 64 + 20 = 84]
+        final_feat = torch.cat([cls_out, action_feat], dim=1) # [B, 64 + 20 = 84] (Assuming default config values, actually 32+20=52 for this run)
         
-        # 10. Project to 256 dimensions
-        out = self.out_proj(final_feat) # [B, 256]
+        # 10. Removed Projection to 256 dimensions to keep RL bottleneck compact (like projectc)
+        # out = self.out_proj(final_feat) 
         
-        return out
+        return final_feat
