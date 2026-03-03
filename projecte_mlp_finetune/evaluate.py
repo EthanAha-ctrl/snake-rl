@@ -69,6 +69,13 @@ def evaluate():
             total_reward += reward
             step += 1
             
+            # Save visual render
+            rgb_img = env.render()
+            if rgb_img is not None:
+                import cv2
+                img_save_path = os.path.join("eval_plots", f"episode_{i+1:02d}_step_{step:02d}.png")
+                cv2.imwrite(img_save_path, cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR))
+            
             # Record for plotting
             # action is typically [guess, trigger_prob] or just [guess] depending on dim
             # Let's assume action[0] is the guess/position we care about for X-axis

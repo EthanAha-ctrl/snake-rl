@@ -265,11 +265,58 @@ class CoCEnv(my_gym.Env):
         return obs, total_reward, terminated, False, info
 
     def render(self):
-        if self.render_mode == "rgb_array":
-            # 400x400 empty canvas
-            return np.zeros((400, 400, 3), dtype=np.uint8)
-        elif self.render_mode == "human":
-            pass
-            
+        import cv2
+        import torch
+        
+        # 1. Get the current observation (11 x 15 x 20)
+        obs_tensor, _ = self._get_interpolated_obs(self.prev_diff * 10.0)
+        spatial = obs_tensor.reshape((11, 15, 20))
+        spatial_sharpness = spatial[0, :, :] # (15, 20)
+        t_mix = spatial[1:, :, :] # (10, 15, 20)
+        
+        # 2. Pixel-wise Expected Radius
+        tensor = torch.from_numpy(t_mix) # [10, 15, 20]
+        probs = torch.softmax(tensor, dim=0)
+        
+        k = 2
+        topk_vals, topk_indices = torch.topk(probs, k, dim=0)
+        mask = torch.zeros_like(probs)
+        mask.scatter_(0, topk_indices, 1.0)
+        
+        masked_probs = probs * mask
+        masked_probs = masked_probs / (masked_probs.sum(dim=0, keepdim=True) + 1e-9)
+        
+        class_values = torch.arange(0, 10, dtype=torch.float32).view(10, 1, 1)
+        expected_radius = (masked_probs * class_values).sum(dim=0).numpy() # [15, 20]
+        
+        # 3. Construct YUV Image
+        yuv = np.zeros((15, 20, 3), dtype=np.uint8)
+        yuv[:, :, 0] = 128 # Luma
+        
+        # map expected_radius 0..10 -> U channel 0..128
+        u_channel = np.clip((expected_radius / 10.0) * 128.0, 0, 255).astype(np.uint8)
+        yuv[:, :, 1] = u_channel
+        
+        # map sharpness 0..2*scale -> V channel 128
+        v_channel = np.clip((spatial_sharpness / (2.0 * self.sharpness_scale + 1e-5)) * 128.0, 0, 255).astype(np.uint8)
+        yuv[:, :, 2] = v_channel
+        
+        # Convert YUV to RGB
+        rgb = cv2.cvtColor(yuv, cv2.COLOR_YUV2RGB)
+        
+        # Upscale for visibility
+        rgb_large = cv2.resize(rgb, (400, 300), interpolation=cv2.INTER_NEAREST)
+        
+        # Add telemetry text onto the image
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        t1 = f"Guess: {self.prev_position:.2f} GT: {self.ground_truth:.2f}"
+        t2 = f"Diff: {self.prev_diff:.2f} Step: {self.current_step}"
+        # If we had the original image key, we could print it. But we just show the physics here.
+        
+        cv2.putText(rgb_large, t1, (10, 25), font, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.putText(rgb_large, t2, (10, 50), font, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
+        
+        return rgb_large
+
     def close(self):
         pass
