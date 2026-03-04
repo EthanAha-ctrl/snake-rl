@@ -3,7 +3,6 @@
 #include <string>
 #include <vector>
 
-
 #include "CoCEnv.h"
 #include "HistoryStacker.h"
 
@@ -20,7 +19,7 @@ int main(int argc, char *argv[]) {
   // 2. Load Models (Assuming we use INT8 models)
   std::string hrnet_path = "../hrnet_int8.onnx";
   std::string transformer_path = "../transformer_int8.onnx";
-  std::string actor_path = "../sac_actor_int8.onnx";
+  std::string actor_path = "../sac_actor.onnx";
 
   // Fallbacks to unquantized if not available in your build setup
   // (user should swap names if they want FP32 tests)
@@ -75,7 +74,7 @@ int main(int argc, char *argv[]) {
                                   &tr_input_tensor, 1, tr_output_names, 1);
 
       float *tr_out_ptr = tr_output_tensors[0].GetTensorMutableData<float>();
-      size_t tr_out_size = 256; // Transformer output dim
+      size_t tr_out_size = 52; // Transformer output dim
 
       // C. Actor Inference
       std::vector<int64_t> act_input_shape = {

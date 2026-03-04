@@ -1,44 +1,65 @@
-# 部署与测试全链路指南
+# Snake-RL C++ ONNX 端到端推理部署指南 (AArch64)
 
-本项目已从头重构了整个强化学习环境和推理引擎到 C++，使之能够完全且彻底地脱离 Python 原生运行并部署。以下是全部工作的成果与执行指南。
+本文档面向需要在 **Apple Silicon (M系列芯片) Mac 本地虚拟机 (Fedora Linux AArch64本机虚拟化)** 等桌面级 ARM64 环境下**复现并编译** Snake-RL 强化学习脱机推理环境（基于 ONNX Runtime C++）的开发同事。
 
-## 1. 数据准备 (Python)
-所有的 C++ 图像处理将直接依赖预处理产生的原始 PNG 数据。运行下面的脚本即可将所有的模糊图片和相关信息打包成超大但不失紧凑的 BSON 二进制档案。
+## 1. 核心目录与物料清单
+请确保你已经将本项目的 `projectg_quantization8bit_onnx_linux` 目录克隆到目标板子中。主要需要的资产分为两部分：
+
+1. **核心模型与数据 (项目根目录):**
+   - `hrnet_int8.onnx` (11.6MB) - 量化版视觉骨干网
+   - `transformer_int8.onnx` (546KB) - 量化版时空特征栈
+   - `sac_actor.onnx` (6.3KB) - 极速 FP32 决策网络
+   - `coc_images.bson` (1.5GB+) - BSON 形式打包的图像测试集
+
+2. **C++ 源工程 (`c_plus_plus_src`):**
+   - `inference.cpp` / `CoCEnv.cpp` / `HistoryStacker.cpp` 等模拟器源码
+   - `CMakeLists.txt` - 已配置自动拉包的构建脚本
+
+## 2. 编译前置准备
+
+根据我们之前跑通的 `onnx-hello` 范例，你需要**手动向 `c_plus_plus_src` 目录补充两个外部依赖模块**，剩下的 CMake 会自动处理：
+
+1. **ONNX Runtime (C/C++ SDK)**:
+   - 从微软官网或包管理器获取适配 Linux AArch64 的 `onnxruntime` 二进制压缩包。
+   - 解压后放入 `c_plus_plus_src` 下，并重命名为 `onnxruntime`。
+   - 内部结构必须长这样：
+     ```text
+     c_plus_plus_src/
+     └── onnxruntime/
+         ├── include/     <-- 包含 onnxruntime_cxx_api.h 等头文件
+         └── lib/         <-- 包含 libonnxruntime.so 等动态库
+     ```
+
+2. **`stb_image.h` (轻量级图像解码器)**:
+   - 你可以直接从原先测试成功的 `reference/onnx-hello` 文件夹中将单头文件 `stb_image.h` 拷贝到 `c_plus_plus_src` 的同一级代码目录中。
+
+*注：处理 BSON 需要的第三方解析库 `nlohmann_json` 已经被写在 CMake 中配置为了自动从 GitHub 临时同步，无需提前准备（要求编译时机器联网）。*
+
+## 3. 标准编译流程 
+
+在终端切换至 `c_plus_plus_src` 目录下，并执行外置 CMake 构建：
+
 ```bash
-python convert_lmdb_to_bson.py
-```
-> **注意**: 如果找不到 `bson` 模块，请先通过 `pip install pymongo` 进行安装（内含 C 扩展加速版的 bson 库）。运行后会在目录产生 `coc_images.bson` 文件供 C++ 客户端直读。
-
-## 2. 模型串联导出 (Python)
-原庞大的 Actor-Encoder 网路被完全解耦，分别导出成标准的中间表示 `*.onnx`，彻底甩掉了所有不必要的训练冗余组件。
-请依次平滑执行：
-```bash
-python export_hrnet.py
-python export_transformer_and_actor.py
-```
-> **提示**: 生成 `hrnet.onnx`、`transformer.onnx`、`sac_actor.onnx` 三个模型。
-
-如需获得 ARM 上表现最巅峰的 INT 8 动态量化，请再执行：
-```bash
-python quantize_models.py
-```
-> 将在同级目录并列产出 `*_int8.onnx`。
-
-## 3. C++ 高级仿真环境及推理
-
-在 `c_plus_plus_src` 目录下，我们实现了一个伟大的壮举：**纯 C++ 端完全一比一复刻了强化学习环境！**
-- **`CoCEnv.cpp`**: 自带极高精度的 BSON 读取器、基于 `#include "stb_image.h"` 的无感 PNG 解码器，自带特征交叉图片混合插值阵列。它甚至在内部私有化了 `Ort::Session *hrnet` 对图像直给 ONNX 模拟出 Vision Tensor。
-- **`HistoryStacker.cpp`**: 用 `std::deque` 动态维护的变长定维的 Observation/Action 堆叠器。
-- **`inference.cpp`**: 串联三个 `*_int8.onnx` 模型，拉起 C++ 环境流全闭环测试。
-
-### 编译步骤
-你需要安装 `cmake`，并且系统要能找到 `nlohmann_json` (Header-only) 或对应的 ONNX Runtimes 头文件和动态链接库。然后使用极简方法挂起：
-
-```bash
-cd c_plus_plus_src
-mkdir build && cd build
+mkdir build
+cd build
 cmake ..
-make
+make -j4
+```
+
+## 4. 运行推理与测试
+构建成功后，直接执行编译出的二进制文件：
+
+```bash
 ./inference
 ```
-接下来应该就会看到 `CoCEnv` 在加载完所有的 BSON 之后，在控制台丝滑输出每 Step 的 Reward、Guess 概率和动作了！将其移植到 Raspberry Pi 即是大功告成。
+
+该程序会在启动时做以下几件事：
+1. 装载父目录 (`../`) 下生成的 三个 `*.onnx` 模型到跨线程 Session。
+2. 读取并缓存在内存里的 `coc_images.bson` 测试数据集。
+3. 进入 `CoCEnv` RL 模拟沙盘，由 `stb_image` 动态解码 png、由 C++ 的 `HistoryStacker` 并发压栈帧进行多维张量填充。
+4. 依次打通 `HRNet` -> `Transformer` -> `SAC Actor` 的 ONNX 图，并在标准输出流呈现环境反馈：
+   ```text
+    Guess: 0.XY | Trigger: 0 | Reward: [..., ...]
+   ```
+
+若出现 `Fatal Error: Cannot open BSON file / ONNX load failed` 请随时检查上面所列出的相对文件路径 (`../xxx.onnx`)。

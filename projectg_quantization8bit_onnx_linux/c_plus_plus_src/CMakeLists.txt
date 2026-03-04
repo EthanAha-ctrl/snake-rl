@@ -4,32 +4,26 @@ project(SnakeRL_Inference CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Dependencies:
-# 1. nlohmann_json
-# 2. onnxruntime
+# 1. Include nlohmann_json via FetchContent
+include(FetchContent)
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.11.2
+)
+FetchContent_MakeAvailable(nlohmann_json)
 
-# Users must provide onnxruntime path or install it globally
-find_package(OnnxRuntime)
-find_package(nlohmann_json)
+# 2. Setup ONNX Runtime (align with reference/onnx-hello structure)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/onnxruntime/include)
+link_directories(${CMAKE_CURRENT_SOURCE_DIR}/onnxruntime/lib)
 
-# For stb_image, it's a header-only library. The user should put stb_image.h in this directory.
-
+# 3. Executable and Libraries
 add_executable(inference
     inference.cpp
     CoCEnv.cpp
     HistoryStacker.cpp
 )
 
-# Replace with the actual namespace/target names according to local setup
-if(TARGET OnnxRuntime::onnxruntime OR TARGET onnxruntime)
-    target_link_libraries(inference PRIVATE onnxruntime)
-else()
-    message(WARNING "onnxruntime not found via find_package. Adjust link libraries manually.")
-    target_link_libraries(inference PRIVATE onnxruntime)
-endif()
-
-if(TARGET nlohmann_json::nlohmann_json)
-    target_link_libraries(inference PRIVATE nlohmann_json::nlohmann_json)
-else()
-    message(WARNING "nlohmann_json not found via find_package. Make sure it is in include paths.")
-endif()
+target_link_libraries(inference PRIVATE onnxruntime nlohmann_json::nlohmann_json)
+set_target_properties(inference PROPERTIES INSTALL_RPATH "$ORIGIN/onnxruntime/lib")
