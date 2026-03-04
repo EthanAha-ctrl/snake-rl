@@ -5,18 +5,13 @@
 #include <iostream>
 #include <stdexcept>
 
-// Dependency assumes nlohmann/json for BSON parsing and stb_image.h for PNG
-// decoding
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #include <nlohmann/json.hpp>
 
-// Assume ONNX Runtime is included by the user
-#include <onnxruntime_cxx_api.h>
-
 using json = nlohmann::json;
 
-coc_env::coc_env(const std::string &bson_file_path, Ort::Session *hrnet_session) : hrnet_session(hrnet_session), rng(std::random_device{}()) { init_data(bson_file_path); }
+coc_env::coc_env(const std::string &bson_file_path) : rng(std::random_device{}()) { init_data(bson_file_path); }
 
 coc_env::~coc_env() {}
 
@@ -74,18 +69,20 @@ std::pair<std::vector<uint8_t>, std::vector<float>> coc_env::get_random_data_for
 
     int idx = current_img_index % keys.size();
     std::string key = keys[idx];
-    
+
     std::vector<float> sharp(300, 0.0f);
-    if (key_to_sharpness.find(key) != key_to_sharpness.end()) {
+    if (key_to_sharpness.find(key) != key_to_sharpness.end())
+    {
         sharp = key_to_sharpness[key];
     }
-    
+
     return {key_to_image_png[key], sharp};
 }
 
 std::vector<float> coc_env::decode_png(const std::vector<uint8_t> &png_bytes)
 {
-    if (png_bytes.empty()) return std::vector<float>(480 * 640, 0.0f);
+    if (png_bytes.empty())
+        return std::vector<float>(480 * 640, 0.0f);
 
     int x, y, channels;
     // Force grayscale (1 channel)
@@ -106,7 +103,7 @@ std::vector<float> coc_env::decode_png(const std::vector<uint8_t> &png_bytes)
     return img_float;
 }
 
-std::vector<float> coc_env::get_interpolated_obs(float val, float &out_expected_radius)
+std::pair<std::vector<float>, std::vector<float>> coc_env::get_interpolated_image(float val)
 {
     val = std::max(0.0f, std::min(val, 9.999f));
     int label_floor = static_cast<int>(std::floor(val));
@@ -130,89 +127,17 @@ std::vector<float> coc_env::get_interpolated_obs(float val, float &out_expected_
         t_mix[i] = img_floor[i] * weight_floor + img_ceil[i] * weight_ceil;
     }
 
-    // 1. Run HRNet Inference
-    Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-
-    std::vector<int64_t> input_shape = {1, 1, 480, 640};
-    Ort::Value input_tensor = Ort::Value::CreateTensor<float>(memory_info, t_mix.data(), t_mix.size(), input_shape.data(), input_shape.size());
-
-    const char *input_names[] = {"image_input"};
-    const char *output_names[] = {"vision_features"};
-
-    auto output_tensors = hrnet_session->Run(Ort::RunOptions{nullptr}, input_names, &input_tensor, 1, output_names, 1);
-
-    float *out_arr = output_tensors[0].GetTensorMutableData<float>(); // Shape is [1, 10, 15, 20]
-
-    // 2. Average Pool Output (Mean on spatial dims 15x20 = 300)
-    std::vector<float> logits_avg(10, 0.0f);
-    int spatial_size = 15 * 20;
-    for (int c = 0; c < 10; ++c)
-    {
-        float sum = 0.0f;
-        for (int s = 0; s < spatial_size; ++s)
-        {
-            sum += out_arr[c * spatial_size + s];
-        }
-        logits_avg[c] = sum / spatial_size;
-    }
-
-    // 3. Softmax
-    float max_val_logit = *std::max_element(logits_avg.begin(), logits_avg.end());
-    float sum_exp = 0.0f;
-    std::vector<float> probs(10);
-    for (int i = 0; i < 10; ++i)
-    {
-        probs[i] = std::exp(logits_avg[i] - max_val_logit);
-        sum_exp += probs[i];
-    }
-    for (int i = 0; i < 10; ++i)
-    {
-        probs[i] /= sum_exp;
-    }
-
-    // 4. Top-2 Masking and Expectation
-    int top1_idx = -1, top2_idx = -1;
-    float top1_val = -1.0f, top2_val = -1.0f;
-    for (int i = 0; i < 10; ++i)
-    {
-        if (probs[i] > top1_val)
-        {
-            top2_val = top1_val;
-            top2_idx = top1_idx;
-            top1_val = probs[i];
-            top1_idx = i;
-        }
-        else if (probs[i] > top2_val)
-        {
-            top2_val = probs[i];
-            top2_idx = i;
-        }
-    }
-
-    float norm_sum = top1_val + top2_val + 1e-9f;
-    out_expected_radius = (top1_val * top1_idx + top2_val * top2_idx) / norm_sum;
-
-    // 5. Construct 3300-dim Obs
-    std::vector<float> obs_tensor;
-    obs_tensor.reserve(3300);
-
-    // Sharpness (1x15x20 = 300)
+    // Mix sharpness
     auto &s_floor = data_floor.second;
     auto &s_ceil = data_ceil.second;
+    std::vector<float> s_mix_array(300);
     for (size_t i = 0; i < 300; ++i)
     {
         float s_mix = s_floor[i] * weight_floor + s_ceil[i] * weight_ceil;
-        float sharpness_obs = (s_mix / 640.0f / 480.0f) * sharpness_scale;
-        obs_tensor.push_back(sharpness_obs);
+        s_mix_array[i] = (s_mix / 640.0f / 480.0f) * sharpness_scale;
     }
 
-    // Vision Features (10x15x20 = 3000)
-    for (size_t i = 0; i < 3000; ++i)
-    {
-        obs_tensor.push_back(out_arr[i]);
-    }
-
-    return obs_tensor;
+    return {t_mix, s_mix_array};
 }
 
 std::vector<float> coc_env::reset()
@@ -236,9 +161,9 @@ std::vector<float> coc_env::reset()
 
     diff_threshold = (max_val - min_val) / max_steps;
 
-    float expected_radius = 0.0f;
-    std::vector<float> obs = get_interpolated_obs(prev_diff * 10.0f, expected_radius);
-    return obs;
+    // Obs computation moved to external wrapper logic later down the pipeline
+    // For now we just return an empty vector, or you can retrieve img and sharpness here.
+    return {prev_diff};
 }
 
 env_step_result coc_env::step(const std::vector<float> &action)
@@ -257,9 +182,6 @@ env_step_result coc_env::step(const std::vector<float> &action)
 
     guess_act = std::max(0.0f, std::min(1.0f, guess_act));
     float absolute_diff = std::abs(guess_act - ground_truth);
-    
-    float expected_radius = 0.0f;
-    std::vector<float> obs = get_interpolated_obs(absolute_diff * 10.0f, expected_radius);
 
     current_step++;
 
@@ -278,12 +200,12 @@ env_step_result coc_env::step(const std::vector<float> &action)
         float sign_prev = (prev_position - ground_truth >= 0.0f) ? 1.0f : -1.0f;
         float sign_curr = (guess_act - ground_truth >= 0.0f) ? 1.0f : -1.0f;
         float sign = sign_prev * sign_curr;
-        
+
         if (sign < 0)
         {
             fsm_overshoot_count++;
         }
-        
+
         if (fsm == "coarse search")
         {
             if (fsm_overshoot_count == 1)
@@ -318,7 +240,7 @@ env_step_result coc_env::step(const std::vector<float> &action)
             // fine search
             r_guess += -(current_step * current_step) / 10.0f;
             r_guess += improvement * 10.0f;
-            
+
             if (!trigger_act && prev_diff < diff_threshold)
             {
                 r_trigger = 2.0f;
@@ -356,5 +278,5 @@ env_step_result coc_env::step(const std::vector<float> &action)
     prev_diff = absolute_diff;
     prev_position = guess_act;
 
-    return {obs, {r_guess, r_trigger}, terminated, false};
+    return {{absolute_diff}, {r_guess, r_trigger}, terminated, false};
 }

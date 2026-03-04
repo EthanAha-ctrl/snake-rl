@@ -6,13 +6,7 @@
 #include <string>
 #include <vector>
 
-// Forward declaration for ONNX Runtime to keep header clean if possible
-// Alternatively, assume caller includes ONNX Runtime headers.
-namespace Ort
-{
-class Session;
-class Env;
-} // namespace Ort
+#include "engine.h"
 
 struct env_step_result
 {
@@ -25,11 +19,12 @@ struct env_step_result
 class coc_env
 {
   public:
-    coc_env(const std::string &bson_file_path, Ort::Session *hrnet_session);
+    coc_env(const std::string &bson_file_path, EngineHandle engine);
     ~coc_env();
 
     std::vector<float> reset();
     env_step_result step(const std::vector<float> &action);
+    std::pair<std::vector<float>, std::vector<float>> get_interpolated_image(float val);
 
   private:
     float min_val = 0.0f;
@@ -57,7 +52,6 @@ class coc_env
     std::map<std::string, std::vector<uint8_t>> key_to_image_png; // Store raw PNG bytes
     std::map<std::string, std::vector<float>> key_to_sharpness;   // 15x20 floats
 
-    Ort::Session *hrnet_session;
     std::mt19937 rng;
 
     // Initialization
@@ -65,7 +59,6 @@ class coc_env
 
     // Core Logic
     std::pair<std::vector<uint8_t>, std::vector<float>> get_random_data_for_label(int label);
-    std::vector<float> get_interpolated_obs(float val, float &out_expected_radius);
 
     // Helpers
     std::vector<float> decode_png(const std::vector<uint8_t> &png_bytes); // Returns flat float32 [H*W]
