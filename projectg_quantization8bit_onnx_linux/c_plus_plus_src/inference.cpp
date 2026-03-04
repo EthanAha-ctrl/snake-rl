@@ -13,7 +13,8 @@ int main(int argc, char *argv[])
     // 1. Initialize ONNX Runtime
     Ort::Env ort_env(ORT_LOGGING_LEVEL_WARNING, "SnakeRL_Inference");
     Ort::SessionOptions session_options;
-    session_options.SetIntraOpNumThreads(1);
+    session_options.SetIntraOpNumThreads(8);
+    session_options.SetInterOpNumThreads(8);
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
 
     // 2. Load Models (Assuming we use INT8 models)
@@ -35,7 +36,8 @@ int main(int argc, char *argv[])
     try
     {
         coc_env env(bson_path, &hrnet_session);
-        history_stacker actual_stacker(1, 2, 10);
+        // HistoryStacker: obs_dim=3300, action_dim=2, history_len=10
+        history_stacker actual_stacker(3300, 2, 10);
 
         Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 
