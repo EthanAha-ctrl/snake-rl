@@ -8,6 +8,7 @@
 
 // Dependency assumes nlohmann/json for BSON parsing and stb_image.h for PNG
 // decoding
+#define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #include <nlohmann/json.hpp>
 
