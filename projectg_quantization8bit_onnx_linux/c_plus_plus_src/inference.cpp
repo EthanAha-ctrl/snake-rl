@@ -3,10 +3,11 @@
 #include <string>
 #include <vector>
 
-#include "CoCEnv.h"
-#include "HistoryStacker.h"
+#include "coc_env.h"
+#include "history_stacker.h"
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
   std::cout << "Starting SAC CoC Inference in pure C++..." << std::endl;
 
   // 1. Initialize ONNX Runtime
@@ -33,15 +34,17 @@ int main(int argc, char *argv[]) {
   // 3. Initialize Environment & History Stacker
   std::string bson_path = "../coc_images.bson";
 
-  try {
-    CoCEnv env(bson_path, &hrnet_session);
-    HistoryStacker stacker(1, 1,
-                           10); // obs_dim=1, action_dim=1 (assume Action is
-                                // just 1 array, wait Python had 2? Let's use 2)
+  try
+  {
+    coc_env env(bson_path, &hrnet_session);
+    history_stacker stacker(
+        1, 1,
+        10); // obs_dim=1, action_dim=1 (assume Action is
+             // just 1 array, wait Python had 2? Let's use 2)
 
     // Wait, in Python Action was [guess, trigger]. Let's update stacker to use
     // action_dim=2. And Obs_dim is 1 for CoC.
-    HistoryStacker actual_stacker(1, 2, 10);
+    history_stacker actual_stacker(1, 2, 10);
 
     Ort::MemoryInfo memory_info =
         Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
@@ -55,7 +58,8 @@ int main(int argc, char *argv[]) {
     float total_reward_trigger = 0.0f;
     bool done = false;
 
-    while (!done) {
+    while (!done)
+    {
       // A. Stack History
       std::vector<float> stacked_obs = actual_stacker.stacked();
 
@@ -94,7 +98,7 @@ int main(int argc, char *argv[]) {
       std::vector<float> action(action_ptr, action_ptr + 2); // [guess, trigger]
 
       // D. Environment Step
-      EnvStepResult step_res = env.step(action);
+      env_step_result step_res = env.step(action);
 
       actual_stacker.append(step_res.obs, action);
 
@@ -111,8 +115,9 @@ int main(int argc, char *argv[]) {
     std::cout << "Total Reward (Guess): " << total_reward_guess << std::endl;
     std::cout << "Total Reward (Trigger): " << total_reward_trigger
               << std::endl;
-
-  } catch (const std::exception &e) {
+  }
+  catch (const std::exception &e)
+  {
     std::cerr << "Fatal Error: " << e.what() << std::endl;
     return 1;
   }

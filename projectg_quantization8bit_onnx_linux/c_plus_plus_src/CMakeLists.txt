@@ -3,6 +3,7 @@ project(SnakeRL_Inference CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O0")
 
 # 1. Include nlohmann_json via FetchContent
 include(FetchContent)
@@ -20,8 +21,8 @@ link_directories(${CMAKE_CURRENT_SOURCE_DIR}/onnxruntime/lib)
 # 3. Executable and Libraries
 add_executable(inference
     inference.cpp
-    CoCEnv.cpp
-    HistoryStacker.cpp
+    coc_env.cpp
+    history_stacker.cpp
 )
 
 target_link_libraries(inference PRIVATE onnxruntime nlohmann_json::nlohmann_json)
