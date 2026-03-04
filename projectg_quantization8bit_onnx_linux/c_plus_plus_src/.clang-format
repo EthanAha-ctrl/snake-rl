@@ -1,2 +1,4 @@
 BasedOnStyle: LLVM
 BreakBeforeBraces: Allman
+ColumnLimit: 10000
+IndentWidth: 4
