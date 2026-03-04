@@ -2,7 +2,7 @@ import os
 from onnxruntime.quantization import quantize_dynamic, QuantType
 
 def quantize_all():
-    models = ['hrnet.onnx', 'transformer.onnx', 'sac_actor.onnx']
+    models = ['hrnet.onnx', 'transformer.onnx']
     
     for model_name in models:
         quantized_name = model_name.replace(".onnx", "_int8.onnx")

@@ -31,14 +31,11 @@ def export_hrnet():
         dummy_input,
         onnx_path,
         export_params=True,
-        opset_version=14,
+        opset_version=18,
         do_constant_folding=True,
+        fallback=True,
         input_names=['image_input'],
-        output_names=['vision_features'],
-        dynamic_axes={
-            'image_input': {0: 'batch_size'},
-            'vision_features': {0: 'batch_size'}
-        }
+        output_names=['vision_features']
     )
     
     print("Done! Exported hrnet.onnx")

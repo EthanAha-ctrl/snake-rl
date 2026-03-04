@@ -33,8 +33,8 @@ def export_models():
     
     # Obs_dim and Action_dim according to train.py
     obs_dim = 1
-    action_dim = 1
-    input_dim = obs_dim * cfg.history_len + action_dim * cfg.history_len # 20
+    action_dim = 2
+    input_dim = obs_dim * cfg.history_len + action_dim * cfg.history_len # 30
     
     # Initialize the entire Trainer to get fully initialized components
     print("Initializing SACTrainer to load weights...")
@@ -54,14 +54,11 @@ def export_models():
         dummy_obs_stack,
         "transformer.onnx",
         export_params=True,
-        opset_version=14,
+        opset_version=18,
         do_constant_folding=True,
+        fallback=True,
         input_names=['obs_stack'],
-        output_names=['encoded_features'],
-        dynamic_axes={
-            'obs_stack': {0: 'batch_size'},
-            'encoded_features': {0: 'batch_size'}
-        }
+        output_names=['encoded_features']
     )
     print("Done! Exported transformer.onnx")
 
@@ -73,16 +70,17 @@ def export_models():
     actor_wrapper = ActorInferenceWrapper(actor)
     actor_wrapper.eval()
     
-    # The Transformer outputs 256 dimensional feature vector
-    dummy_actor_input = torch.randn(1, 256, device=trainer.device)
+    # The Transformer outputs 52 dimensional feature vector
+    dummy_actor_input = torch.randn(1, 52, device=trainer.device)
     
     torch.onnx.export(
         actor_wrapper,
         dummy_actor_input,
         "sac_actor.onnx",
         export_params=True,
-        opset_version=14,
+        opset_version=18,
         do_constant_folding=True,
+        fallback=True,
         input_names=['features'],
         output_names=['action'],
         dynamic_axes={
