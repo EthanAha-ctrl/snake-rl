@@ -223,8 +223,12 @@ project2/runs/
 *.onnx
 *.bson
 *.data
+*.tgz
 
 projecta/reference/
 projectb/reference/
 projectc/reference/
 projectg_quantization8bit_onnx_linux/reference/
+projectd/reference/project7/reference/
+projectd/reference/projectc/
+projecte_mlp_finetune/reference/
