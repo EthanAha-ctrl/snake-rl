@@ -31,3 +31,24 @@
 python 1_preprocessing.py
 python 3_train.py
 ```
+
+Epoch 9 [0/314] Loss: 0.1729
+
+Epoch 9 [50/314] Loss: 0.2209
+
+Epoch 9 [100/314] Loss: 0.0841
+
+Epoch 9 [150/314] Loss: 0.2695
+
+Epoch 9 [200/314] Loss: 0.0740
+
+Epoch 9 [250/314] Loss: 0.0761
+
+Epoch 9 [300/314] Loss: 0.1144
+
+Epoch 9/50 | Time: 156.2s
+
+Train Loss: 0.1434 | Acc: 95.22%
+
+Val   Loss: 0.1114 | Acc: 95.88%
+
