@@ -93,10 +93,10 @@ class BasicBlock(nn.Module):
 
 class MiniHRNetMIL(nn.Module):
     """
-    轻量级 MiniHRNet-MIL:
+    超轻量级 MiniHRNet-MIL:
     1. 输入 32x32 非重叠切片 (300 块)。
     2. 3 个并行分支阶段 (B1:32x32, B2:16x16, B3:8x8)。
-    3. 移除 Stage 4 以提升训练速度。
+    3. 所有通道固定为 16 (NPU 友好, 减少内存带宽)。
     """
     def __init__(self, num_classes=10):
         super().__init__()
@@ -113,53 +113,53 @@ class MiniHRNetMIL(nn.Module):
         
         # Transition 1 to 2
         self.trans1_to_2 = nn.Sequential(
-            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(16, 16, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(16),
             nn.ReLU(inplace=True)
         )
         
         # Stage 2 (B1: 32x32, B2: 16x16)
         self.layer2_b1 = BasicBlock(16, 16)
-        self.layer2_b2 = BasicBlock(32, 32)
+        self.layer2_b2 = BasicBlock(16, 16)
         
-        self.fuse2_21 = nn.Sequential(nn.Conv2d(32, 16, kernel_size=1, bias=False), nn.BatchNorm2d(16))
-        self.fuse2_12 = nn.Sequential(nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1, bias=False), nn.BatchNorm2d(32))
+        self.fuse2_21 = nn.Sequential(nn.Conv2d(16, 16, kernel_size=1, bias=False), nn.BatchNorm2d(16))
+        self.fuse2_12 = nn.Sequential(nn.Conv2d(16, 16, kernel_size=3, stride=2, padding=1, bias=False), nn.BatchNorm2d(16))
         
         # Transition 2 to 3
         self.trans2_to_3 = nn.Sequential(
-            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(16, 16, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(16),
             nn.ReLU(inplace=True)
         )
         
         # Stage 3 (B1: 32x32, B2: 16x16, B3: 8x8)
         self.layer3_b1 = BasicBlock(16, 16)
-        self.layer3_b2 = BasicBlock(32, 32)
-        self.layer3_b3 = BasicBlock(64, 64)
+        self.layer3_b2 = BasicBlock(16, 16)
+        self.layer3_b3 = BasicBlock(16, 16)
         
         # Fusion 3
-        self.fuse3_21 = nn.Sequential(nn.Conv2d(32, 16, kernel_size=1, bias=False), nn.BatchNorm2d(16))
-        self.fuse3_32 = nn.Sequential(nn.Conv2d(64, 32, kernel_size=1, bias=False), nn.BatchNorm2d(32))
-        self.fuse3_12 = nn.Sequential(nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1, bias=False), nn.BatchNorm2d(32))
-        self.fuse3_23 = nn.Sequential(nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1, bias=False), nn.BatchNorm2d(64))
+        self.fuse3_21 = nn.Sequential(nn.Conv2d(16, 16, kernel_size=1, bias=False), nn.BatchNorm2d(16))
+        self.fuse3_32 = nn.Sequential(nn.Conv2d(16, 16, kernel_size=1, bias=False), nn.BatchNorm2d(16))
+        self.fuse3_12 = nn.Sequential(nn.Conv2d(16, 16, kernel_size=3, stride=2, padding=1, bias=False), nn.BatchNorm2d(16))
+        self.fuse3_23 = nn.Sequential(nn.Conv2d(16, 16, kernel_size=3, stride=2, padding=1, bias=False), nn.BatchNorm2d(16))
 
         # Head (Combine B1, B2, B3)
         self.head_b1_down = nn.Sequential(
-            nn.Conv2d(16, 32, 3, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(16, 16, 3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(16),
             nn.ReLU(inplace=True)
         )
         self.head_b2_down = nn.Sequential(
-            nn.Conv2d(32, 64, 3, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(16, 16, 3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(16),
             nn.ReLU(inplace=True)
         )
         
         self.classifier = nn.Sequential(
-            nn.Linear(64, 128),
+            nn.Linear(16, 64),
             nn.ReLU(inplace=True),
             nn.Dropout(0.2),
-            nn.Linear(128, num_classes)
+            nn.Linear(64, num_classes)
         )
 
     def forward(self, x):
