@@ -232,3 +232,4 @@ projectg_quantization8bit_onnx_linux/reference/
 projectd/reference/project7/reference/
 projectd/reference/projectc/
 projecte_mlp_finetune/reference/
+projectd/runs/

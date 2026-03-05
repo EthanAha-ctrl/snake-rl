@@ -448,7 +448,7 @@ class SACTrainer:
         
         # Total BC Loss
         # Balance Scales: MSE target < 0.01, CE target < 0.1
-        total_loss = 10.0 * loss_guess + loss_trigger
+        total_loss =  0.99 * loss_guess + 0.01*loss_trigger
         
         # Update Encoder & Actor bridge layer
         self.bc_optimizer.zero_grad()
