@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import cv2
+import random
 
 # --- Constants & Configuration ---
 TARGET_H, TARGET_W = 480, 640
@@ -121,7 +122,7 @@ def create_random_polygon_mask(h, w):
     
     return mask
 
-def generate_focus_stack(bg_gray, fg_gray, a_list, b_depth, c_depth):
+def generate_focus_stack(bg_gray, fg_gray, a_list, c_depth):
     """
     Generates a list of 10 optically blended images based on focus distance 'a'.
     
@@ -129,9 +130,8 @@ def generate_focus_stack(bg_gray, fg_gray, a_list, b_depth, c_depth):
         bg_gray: Background image (grayscale, uint8).
         fg_gray: Foreground image (grayscale, uint8, same size as bg_gray).
         a_list: List of 10 focus proxies [0, ..., 9].
-        b_depth: Foreground focus proxy.
-        c_depth: Background focus proxy.
-        
+        c_depth: delta between foreground and background.
+
     Returns:
         blended_imgs: List of 10 blended grayscale numpy images (TARGET_H x TARGET_W, uint8).
         labels: List of 10 absolute foreground blur radii for each image.
@@ -140,8 +140,10 @@ def generate_focus_stack(bg_gray, fg_gray, a_list, b_depth, c_depth):
     h, w = bg_gray.shape
     mask = create_random_polygon_mask(h, w)
     
-    fg_radii = np.abs(np.array(a_list) - b_depth).astype(int)
-    bg_radii = np.abs(np.array(a_list) - c_depth).astype(int)
+    fg_radii = np.abs(np.array(a_list)).astype(int)
+    sign = random.choice([-1, 1])
+    bg_radii = np.abs(np.array(a_list) + sign * c_depth).astype(int)
+    bg_radii = np.clip(bg_radii, 0, 9)
     zeros = np.zeros_like(a_list)
     
     # Convert sRGB (approx) to linear light space by applying gamma 2.2

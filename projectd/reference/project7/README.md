@@ -1,55 +1,31 @@
-# HRNet Blur Classification Project
+# HRNet 模糊度特征提取 (原项目7)
 
-This project uses an HRNet-W18 model to classify the blur radius (0-9) of images.
+本项目包含用于强化学习环境的 HRNet 视觉特征提取流程。此目录已经过精简，移除了原有的训练和评估脚本，仅保留与强化学习环境部署和数据生成相关的核心推理逻辑。
 
-## Recent Updates
+## 核心流程：张量数据库生成
 
-### 1. Label Range Fix (0-9)
-- **Problem**: The training script `train.py` was previously using a 1-10 label range and subtracting 1, which caused errors when the dataset was updated to use 0-9 directly.
-- **Fix**: Updated `train.py` to use labels 0-9 directly without modification.
+我们将原始图像的 HRNet 特征（10x15x20 张量）提取并导出到独立的 LMDB 数据库中供强化学习环境使用。
 
-### 2. Evaluation Metadata Format
-- **Update**: The `evaluate.py` script has been updated to handle the new metadata format which includes 3 elements: `(key, label, sharpness_map)`.
+- **脚本**：`generate_tensor_db.py`
+  - 核心光学模糊合成算法见 `blur_ops.py`。
+  - 在运行时合成具有前/背景相对散景的对焦栈图像。
+  - 运行定义在 `model.py` 中的 HRNet-W18 推理。
+  - 将输出张量 `[10, 15, 20]`（通道数, 高度, 宽度）保存至 `data/coc_tensor_10x15x20.lmdb`。
+  - **注意**：分辨率自然下采样了 32 倍（480/32=15, 640/32=20）。
 
-### 3. Tensor Database Generation (New)
-We have added a new pipeline to export the HRNet features (10x15x20 tensors) to a separate LMDB database for future use.
+## 关键脚本
 
-- **Script**: `generate_tensor_db.py`
-  - Loads images from `coc_train.lmdb`.
-  - Runs HRNet inference.
-  - Saves the output tensor `[10, 15, 20]` (Channels, Height, Width) to `coc_tensor_10x15x20.lmdb`.
-  - **Note**: The resolution is naturally downsampled by 32x (480/32=15, 640/32=20).
-
-- **Verification**: `verify_tensor_performance.py`
-  - Reads the generated tensors.
-  - Applies **Top-k Soft Expectation**:
-    1.  Computes Softmax probabilities over the 10 classes.
-    2.  Selects Top-3 probabilities (masks others to 0).
-    3.  Re-normalizes probabilities to sum to 1.
-    4.  Calculates weighted expected radius.
-  - Validates that the generated features match the ground truth labels.
-  - Outputs detailed per-label error histograms.
-
-## Key Scripts
-
-| Script | Description |
+| 脚本 | 描述 |
 | :--- | :--- |
-| `preprocessing.py` | Generates the training dataset (LMDB) from source images. |
-| `train.py` | Trains the HRNet-W18 model on the dataset. |
-| `evaluate.py` | Runs evaluation loop on the test set. |
-| `evaluate_single_image.py` | Visualizes model predictions on a single image (with crops). |
-| `generate_tensor_db.py` | **[NEW]** Generates feature tensor database. |
-| `verify_tensor_performance.py` | **[NEW]** Verifies tensor database quality. |
+| `model.py` | HRNet-W18 网络架构定义。 |
+| `blur_ops.py` | 光学模糊、弥散圆 (CoC) 模拟以及前背景相对景深合成算法。 |
+| `generate_tensor_db.py` | 生成强化学习环境所需的特征张量数据库。 |
+| `test_foreground_background.py` | 用于测试和验证前后景分离及模糊逻辑。 |
 
-## Usage
+## 使用方法
 
-### Generate Tensor Database
+### 生成张量数据库
 ```bash
 python generate_tensor_db.py
 ```
-
-### Verify Tensor Database
-```bash
-python verify_tensor_performance.py
-```
-This will print a detailed error analysis table for each label (0-9), showing accuracy and error distribution.
+这会重新合成前背景对齐的模糊图像，并通过模型提取特征后存入 LMDB 数据库供上层环境调用。
