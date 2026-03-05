@@ -8,7 +8,7 @@ import torch
 import os
 
 # Tensor DB paths
-META_PATH = os.path.join("reference", "project7", "data", "coc_meta.pkl")
+META_PATH = os.path.join("reference", "project7", "data", "coc_meta_foreground_background.pkl")
 LMDB_PATH = os.path.join("reference", "project7", "data", "coc_tensor_10x15x20.lmdb")
 
 class CoCEnv(my_gym.Env):
