@@ -1,6 +1,6 @@
-# 密集特征提取模型架构设计：从全局 HRNet 到局部 MIL-PatchCNN
+# 密集特征提取模型架构设计：从全局 HRNet 到局部 MiniHRNet-MIL
 
-**本文档旨在详细记录项目从原先的全局 HRNet (High-Resolution Net) 迁移到新设计的 Patch 级别的多示例学习卷积神经网络 (MIL-PatchCNN) 的动机、设计思路、物理直觉与核心架构。**
+**本文档旨在详细记录项目从原先的全局 HRNet 迁移到 Patch 级别的多示例学习迷你高分辨率网络 (MiniHRNet-MIL) 的动机、设计思路、物理直觉与核心架构。**
 
 ## 1. 问题背景：HRNet 为什么失效了？
 
@@ -25,22 +25,16 @@
 
 为了**绝对地 (Absolutely) 斩断感受野交叉感染**，并在保留原有标注策略（一图一个全局景深标注）的情况下进行端到端的计算，我们引入了计算机视觉中非常经典的 **基于切片的多示例学习 (Multiple Instance Learning, MIL)** 方案。
 
-### 2.1 物理隔绝：Patch 切割
-与其让庞大的网络处理 `640x480`，不如把它一刀切成 300 个毫无瓜葛的小图。
-每个网格大小为 `32x32`，一共产生 `15 x 20 = 300` 个独立的 Patch。
+### 2.1 物理隔绝：32x32 Patch 切割
+为了追求极致的训练速度，我们采用了 **32x32 非重叠切片**。
+* **切片规格**：每个切片大小为 `32x32`，不进行额外的 Padding。
+* **结果**：产生 $15 \times 20 = 300$ 个 Patch。这是计算量最省的方案，且依然保持了物理上的绝对隔离。
 
-```python
-# 物理切片：利用 unfold 暴力斩断特征关联
-# [Batch, 1, 480, 640] -> [Batch, 1, 15, 32, 20, 32]
-patches = x.unfold(2, 32, 32).unfold(3, 32, 32)
-# 重塑为 300 张 [1, 32, 32] 的小图构成的巨大 Batch
-patches_flat = patches.view(Batch * 300, 1, 32, 32) 
-```
-此时，我们将这 `Batch * 300` 张小图同时丢给一个简单的 4 层普通 CNN（无任何全局注意力机制）。这样一来，**负责区域 A 的 CNN 无论如何计算，由于内存上的硬隔离，它绝对不可能看到区域 B 的哪怕一个像素。**
-
-### 2.2 特征映射的维度 (Logits)
-每个 `1x32x32` 的小图会生成一个 `10 维` 的 logits（对应 Radius 类别 0 到 9，分别对应由清晰到极度模糊的状态）。所以，中转矩阵的维度为：
-> **`[Batch, 300, 10]`**
+### 2.2 核心架构：轻量级 MiniHRNet
+`MiniHRNetMIL` 在每个 Patch 内部运行了一个精简的 3 阶段高分辨率网络：
+* **并行分支**：维护 3 个分辨率分支（B1: 32x32, B2: 16x16, B3: 8x8）。
+* **多尺度融合**：在 3 个分辨率间进行特征交换。
+* **全局聚合**：通过 `AdaptiveAvgPool2d` 提取特征，输出 10 维 Logits。
 
 ---
 
@@ -72,9 +66,9 @@ $$ Global\_Logits_{(Batch, 10)} = \max_{j \in [1..300]} Patch\_Logits_{(Batch, j
 我们利用 Max Pooling 使得轻量级模型可以隐式地“找到核心区域”进行梯度下降，而无需人类手工逐图框选前景背景。
 ```mermaid
 graph TD
-    A([Input Image: 640x480]) -->|Unfold & Reshape| B(300独立的 32x32 Patches)
-    B -->|Shared CNN Extractor| C(独立的特征: 300个 1024 维向量)
-    C -->|Shared Linear Head| D(独立的局部分布: 300个 10 维 Logits)
+    A([Input Image: 640x480]) -->|Unfold & Reshape| B(300个 32x32 Patches)
+    B -->|MiniHRNet Extractor| C(3级并行特征融合: B1,B2,B3)
+    C -->|Adaptive AvgPool| D(独立的局部分布: 300个 10 维 Logits)
     D -->|Max Pooling (dim=1)| E(全图唯一代表分布: 10维 Global Logits)
     E -->|Cross Entropy| F([Ground Truth Scalar: e.g., 5])
 ```
@@ -86,8 +80,8 @@ graph TD
 
 ```mermaid
 graph TD
-    A([Test Input: 640x480]) -->|Unfold| B(300个独立的 32x32 Patches)
-    B -->|Shared CNN| C(300x10 的局部 Logits)
+    A([Test Input: 640x480]) -->|Unfold| B(300个 32x32 Patches)
+    B -->|MiniHRNet| C(300x10 的局部 Logits)
     C -->|Permute & View| D([Spatial Tensor: 10 x 15 x 20])
 ```
 
@@ -99,7 +93,7 @@ $\sum (Class\_Value \times Softmax(Spatial\_Tensor))$，我们便能完美复刻
 ---
 
 ## 5. 总结
-MIL-PatchCNN 通过一种极其优雅的方式 (**“硬切片阻断感受野”** + **“Max Pooling 隐式多示例选择”**) 从根本上治愈了全局 CNN 导致的高频连累污染。不仅网络更轻量 (去掉了 HRNet 的复杂分支)，更使得模型天然支持从图像级监督向像素级推理的降维打击转换。
+`MiniHRNetMIL` 通过一种极其优雅的方式 (**“重叠切片阻断全局感受野”** + **“多尺度并行分支提取”** + **“Max Pooling 隐式多示例选择”**) 从根本上治愈了全局大网络导致的高频污染问题。它在保持物理隔离、防止预测坍缩的同时，通过 HRNet 架构大幅提升了网络对细微纹理模糊程度的分辨率。
 
 ---
 

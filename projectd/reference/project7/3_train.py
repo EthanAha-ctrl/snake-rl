@@ -14,13 +14,17 @@ from model import MiniHRNetMIL
 from torch.utils.tensorboard import SummaryWriter
 
 # --- Configuration ---
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 NUM_EPOCHS = 50
 LEARNING_RATE = 5e-4
 WEIGHT_DECAY = 1e-4
 NUM_WORKERS = 4
 VAL_SPLIT = 0.1 # 10% for validation
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# cuDNN Stability
+torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.deterministic = True
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_ROOT = os.path.join(SCRIPT_DIR, "data")

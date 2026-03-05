@@ -93,8 +93,10 @@ class BasicBlock(nn.Module):
 
 class MiniHRNetMIL(nn.Module):
     """
-    结合了 64x64 重叠切片 (Overlap 50%, Reflect Padding) 
-    和 4 分支迷你高分辨率并行架构的 MIL 网络
+    轻量级 MiniHRNet-MIL:
+    1. 输入 32x32 非重叠切片 (300 块)。
+    2. 3 个并行分支阶段 (B1:32x32, B2:16x16, B3:8x8)。
+    3. 移除 Stage 4 以提升训练速度。
     """
     def __init__(self, num_classes=10):
         super().__init__()
@@ -106,7 +108,7 @@ class MiniHRNetMIL(nn.Module):
             nn.ReLU(inplace=True)
         )
         
-        # Stage 1 (Branch 1: 64x64)
+        # Stage 1 (Branch 1: 32x32)
         self.layer1 = BasicBlock(16, 16)
         
         # Transition 1 to 2
@@ -116,7 +118,7 @@ class MiniHRNetMIL(nn.Module):
             nn.ReLU(inplace=True)
         )
         
-        # Stage 2 (B1: 64x64, B2: 32x32)
+        # Stage 2 (B1: 32x32, B2: 16x16)
         self.layer2_b1 = BasicBlock(16, 16)
         self.layer2_b2 = BasicBlock(32, 32)
         
@@ -130,7 +132,7 @@ class MiniHRNetMIL(nn.Module):
             nn.ReLU(inplace=True)
         )
         
-        # Stage 3 (B1: 64x64, B2: 32x32, B3: 16x16)
+        # Stage 3 (B1: 32x32, B2: 16x16, B3: 8x8)
         self.layer3_b1 = BasicBlock(16, 16)
         self.layer3_b2 = BasicBlock(32, 32)
         self.layer3_b3 = BasicBlock(64, 64)
@@ -141,20 +143,7 @@ class MiniHRNetMIL(nn.Module):
         self.fuse3_12 = nn.Sequential(nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1, bias=False), nn.BatchNorm2d(32))
         self.fuse3_23 = nn.Sequential(nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1, bias=False), nn.BatchNorm2d(64))
 
-        # Transition 3 to 4
-        self.trans3_to_4 = nn.Sequential(
-            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True)
-        )
-
-        # Stage 4 (B1: 64x64, B2: 32x32, B3: 16x16, B4: 8x8)
-        self.layer4_b1 = BasicBlock(16, 16)
-        self.layer4_b2 = BasicBlock(32, 32)
-        self.layer4_b3 = BasicBlock(64, 64)
-        self.layer4_b4 = BasicBlock(128, 128)
-        
-        # Head
+        # Head (Combine B1, B2, B3)
         self.head_b1_down = nn.Sequential(
             nn.Conv2d(16, 32, 3, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(32),
@@ -165,47 +154,34 @@ class MiniHRNetMIL(nn.Module):
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True)
         )
-        self.head_b3_down = nn.Sequential(
-            nn.Conv2d(64, 128, 3, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True)
-        )
         
         self.classifier = nn.Sequential(
-            nn.Linear(128, 256),
+            nn.Linear(64, 128),
             nn.ReLU(inplace=True),
             nn.Dropout(0.2),
-            nn.Linear(256, num_classes)
+            nn.Linear(128, num_classes)
         )
 
     def forward(self, x):
         import torch.nn.functional as F
         B = x.size(0)
         
-        # 1. 边缘 16 像素 Reflect Padding, [B, 1, 480, 640] -> [B, 1, 512, 672]
-        x_pad = F.pad(x, (16, 16, 16, 16), mode='reflect')
-        
-        # 裁剪出 64x64，步长 32，共 300 块
-        patches = x_pad.unfold(2, 64, 32).unfold(3, 64, 32) 
-        
-        patches = patches.contiguous().view(B, 300, 1, 64, 64)
-        patches_flat = patches.view(B * 300, 1, 64, 64)
+        # 1. 物理切片：32x32 非重叠，[B, 1, 480, 640] -> [B, 300, 1, 32, 32]
+        patches = x.unfold(2, 32, 32).unfold(3, 32, 32) 
+        patches = patches.contiguous().view(B, 300, 1, 32, 32)
+        patches_flat = patches.view(B * 300, 1, 32, 32)
         
         # 2. 多尺度特征提取
         out_stem = self.stem(patches_flat) 
-        
         b1 = self.layer1(out_stem)
-        
         b2 = self.trans1_to_2(b1) 
         
         b1_out = self.layer2_b1(b1)
         b2_out = self.layer2_b2(b2)
-        
         b1_new = F.relu(b1_out + F.interpolate(self.fuse2_21(b2_out), scale_factor=2.0))
         b2_new = F.relu(b2_out + self.fuse2_12(b1_out))
         
         b3 = self.trans2_to_3(b2_new) 
-        
         b1_out = self.layer3_b1(b1_new)
         b2_out = self.layer3_b2(b2_new)
         b3_out = self.layer3_b3(b3)
@@ -214,22 +190,13 @@ class MiniHRNetMIL(nn.Module):
         b2_new = F.relu(b2_out + self.fuse3_12(b1_out) + F.interpolate(self.fuse3_32(b3_out), scale_factor=2.0))
         b3_new = F.relu(b3_out + self.fuse3_23(b2_out))
 
-        b4 = self.trans3_to_4(b3_new)
-
-        b1_final = self.layer4_b1(b1_new)
-        b2_final = self.layer4_b2(b2_new)
-        b3_final = self.layer4_b3(b3_new)
-        b4_final = self.layer4_b4(b4)
-        
         # 3. 分类降维输出
-        b1_reduced = self.head_b1_down(b1_final)
-        b12 = b1_reduced + b2_final
+        b1_reduced = self.head_b1_down(b1_new)
+        b12 = b1_reduced + b2_new
         b12_reduced = self.head_b2_down(b12)
-        b123 = b12_reduced + b3_final
-        b123_reduced = self.head_b3_down(b123)
-        b1234 = b123_reduced + b4_final
+        b123 = b12_reduced + b3_new
         
-        feats = F.adaptive_avg_pool2d(b1234, (1, 1)).view(B * 300, -1)
+        feats = F.adaptive_avg_pool2d(b123, (1, 1)).view(B * 300, -1)
         
         patch_logits = self.classifier(feats) 
         patch_logits = patch_logits.view(B, 300, 10)

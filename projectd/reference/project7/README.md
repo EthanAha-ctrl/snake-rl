@@ -17,7 +17,7 @@
 
 | 脚本 | 描述 |
 | :--- | :--- |
-| `model.py` | MIL-PatchCNN 网络架构定义。 |
+| `model.py` | MiniHRNetMIL 网络架构定义 (结合了多尺度 HRNet 分支与 Patch-MIL 隔离)。 |
 | `blur_ops.py` | 光学模糊、弥散圆 (CoC) 模拟以及前背景相对景深合成算法。 |
 | `1_preprocessing.py` | 生成单平面模糊图像数据集。 |
 | `2_visualize_dataset.py` | 用于检查预处理数据集及清晰度标签。 |
