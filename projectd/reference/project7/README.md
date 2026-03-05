@@ -17,15 +17,17 @@
 
 | 脚本 | 描述 |
 | :--- | :--- |
-| `model.py` | HRNet-W18 网络架构定义。 |
+| `model.py` | MIL-PatchCNN 网络架构定义。 |
 | `blur_ops.py` | 光学模糊、弥散圆 (CoC) 模拟以及前背景相对景深合成算法。 |
-| `generate_tensor_db.py` | 生成强化学习环境所需的特征张量数据库。 |
-| `test_foreground_background.py` | 用于测试和验证前后景分离及模糊逻辑。 |
+| `1_preprocessing.py` | 生成单平面模糊图像数据集。 |
+| `2_visualize_dataset.py` | 用于检查预处理数据集及清晰度标签。 |
+| `3_train.py` | 训练 MIL-PatchCNN 网络。 |
+| `generate_tensor_db.py` | (可选参考) 生成强化学习环境所需的特征张量数据库。 |
 
 ## 使用方法
 
 ### 生成张量数据库
 ```bash
-python generate_tensor_db.py
+python 1_preprocessing.py
+python 3_train.py
 ```
-这会重新合成前背景对齐的模糊图像，并通过模型提取特征后存入 LMDB 数据库供上层环境调用。

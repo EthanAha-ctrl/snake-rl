@@ -4,9 +4,10 @@ import random
 import lmdb
 import pickle
 import cv2
+import time
 from tqdm import tqdm
 
-from blur_ops import init as blur_init, generate_focus_stack, DEVICE, TARGET_H, TARGET_W
+from blur_ops import init as blur_init, core_blur, DEVICE, TARGET_H, TARGET_W
 
 # --- Configuration ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -28,25 +29,48 @@ def get_image_paths(directory):
         image_paths.extend(glob.glob(os.path.join(directory, "**", ext), recursive=True))
     return image_paths
 
-def get_random_fg_image(image_paths, current_bg_path, h, w):
-    fg_candidates = [f for f in image_paths if f != current_bg_path]
-    if not fg_candidates:
-        return None
+def process_image_wrapper(img_path):
+    img_bgr = cv2.imread(img_path)
+    if img_bgr is None:
+        return []
+
+    img_gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     
-    fg_path = random.choice(fg_candidates)
-    fg_bgr = cv2.imread(fg_path)
-    if fg_bgr is None:
-        return None
-        
-    fg_gray = cv2.cvtColor(fg_bgr, cv2.COLOR_BGR2GRAY)
+    h, w = img_gray.shape
+    if h > w:
+        img_gray = cv2.rotate(img_gray, cv2.ROTATE_90_CLOCKWISE)
+        h, w = w, h
+
+    if h < TARGET_H or w < TARGET_W:
+        return []
+
+    target_aspect = TARGET_W / TARGET_H
+    current_aspect = w / h
     
-    # Rotate if portrait and background is landscape, or vice versa
-    fh, fw = fg_gray.shape
-    if (fh > fw and h < w) or (fh < fw and h > w):
-        fg_gray = cv2.rotate(fg_gray, cv2.ROTATE_90_CLOCKWISE)
+    if current_aspect > target_aspect:
+        new_w = int(h * target_aspect)
+        start_x = (w - new_w) // 2
+        img_gray = img_gray[:, start_x : start_x + new_w]
+    else:
+        new_h = int(w / target_aspect)
+        start_y = (h - new_h) // 2
+        img_gray = img_gray[start_y : start_y + new_h, :]
         
-    fg_resized = cv2.resize(fg_gray, (w, h), interpolation=cv2.INTER_AREA)
-    return fg_resized
+    img_gray = cv2.resize(img_gray, (TARGET_W, TARGET_H), interpolation=cv2.INTER_AREA)
+
+    outputs = []
+    
+    a_list = [0] * 10
+    b_list = list(range(0, 10))
+    
+    blurred_batch, sharpness_batch = core_blur(img_gray, a_list, b_list)
+    
+    for i, r in enumerate(b_list):
+        blurred_img = blurred_batch[i]
+        sharpness_grid = sharpness_batch[i]
+        outputs.append((blurred_img, r, sharpness_grid))
+            
+    return outputs
 
 def main():
     print(f"Using device: {DEVICE}")
@@ -64,7 +88,7 @@ def main():
         random.seed(42)
         selected_paths = random.sample(all_paths, TOTAL_SOURCE_IMAGES)
         
-    print(f"Selected {len(selected_paths)} background images for processing.")
+    print(f"Selected {len(selected_paths)} images for processing.")
 
     # 2. Initialization
     blur_init()
@@ -78,66 +102,27 @@ def main():
     global_counter = 0
 
     print("Starting generation...")
-    
-    # 4. Main Generation Loop
-    a_list = list(range(10))
     img_txn = img_env.begin(write=True)
     
     try:
         for idx, img_path in enumerate(tqdm(selected_paths)):
-            # Background Process
-            bg_bgr = cv2.imread(img_path)
-            if bg_bgr is None:
-                continue
-            bg_gray = cv2.cvtColor(bg_bgr, cv2.COLOR_BGR2GRAY)
-            
-            h, w = bg_gray.shape
-            if h > w:
-                bg_gray = cv2.rotate(bg_gray, cv2.ROTATE_90_CLOCKWISE)
-                h, w = w, h
+            try:
+                processed_results = process_image_wrapper(img_path)
                 
-            if h < TARGET_H or w < TARGET_W:
-                continue
+                for (final_img, r, sharpness_grid) in processed_results:
+                    success, encoded_bytes = cv2.imencode('.png', final_img)
+                    if success:
+                        key_str = f"image_{global_counter:08d}"
+                        img_txn.put(key_str.encode('ascii'), encoded_bytes.tobytes())
+                        meta_info.append((key_str, int(r), sharpness_grid))
+                        global_counter += 1
             
-            target_aspect = TARGET_W / TARGET_H
-            current_aspect = w / h
-            
-            if current_aspect > target_aspect:
-                new_w = int(h * target_aspect)
-                start_x = (w - new_w) // 2
-                bg_gray = bg_gray[:, start_x : start_x + new_w]
-            else:
-                new_h = int(w / target_aspect)
-                start_y = (h - new_h) // 2
-                bg_gray = bg_gray[start_y : start_y + new_h, :]
-                
-            bg_gray = cv2.resize(bg_gray, (TARGET_W, TARGET_H), interpolation=cv2.INTER_AREA)
-            
-            # Foreground Process
-            fg_gray = get_random_fg_image(all_paths, img_path, TARGET_H, TARGET_W)
-            if fg_gray is None:
+            except Exception as e:
+                print(f"Error processing {img_path}: {e}")
                 continue
                 
-            # Relative depth offset for background
-            c_depth = random.choice([2, 3, 4, 5])
-            
-            # Generate Focus Stack (only need images, labels, and sharpness)
-            blended_imgs, labels, sharpnesses = generate_focus_stack(bg_gray, fg_gray, a_list, c_depth)
-            
-            # Save to LMDB and Meta
-            for i in range(10):
-                key_str = f"image_{global_counter:08d}"
-                
-                img_data = blended_imgs[i]
-                img_txn.put(key_str.encode('ascii'), img_data.tobytes())
-                
-                label_radius = labels[i]
-                sharpness_grid = sharpnesses[i]
-                meta_info.append((key_str, label_radius, sharpness_grid))
-                global_counter += 1
-            
             # Periodic Commit to save memory
-            if global_counter % 5000 == 0:
+            if global_counter > 0 and global_counter % 5000 == 0:
                 img_txn.commit()
                 img_txn = img_env.begin(write=True)
                     

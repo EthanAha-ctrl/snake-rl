@@ -117,7 +117,7 @@ python 1_preprocessing.py
 
 ### 第二步：端到端训练 MIL-PatchCNN
 ```bash
-python 2_train.py
+python 3_train.py
 ```
 * **目的**：让网络学会玩“全图 Max Pooling 找茬判定”游戏。
 * **过程**：脚本会读取第一步中渲染好的 `coc_img_10x480x640.lmdb`。模型在读取图片后，会在内部利用 `unfold` 拆分成 300 块，算出 300 个 Logits 后 Max-Pooling 与真实的全局 Ground Truth (Target Depth Radius) 进行 Cross-Entropy 计算。
@@ -131,9 +131,9 @@ python 3_generate_tensor_db.py
 * **过程**：此时脚本会加载 `best_model_patch.pth`。在为强化学习系统生产张量时，网络只执行了物理隔断提取 (即输出 300 x 10)，**不再做 Max Pooling**，还原出原汁原味的 $10 \times 15 \times 20$ 的密集空间张量 (Dense Spatial Tensor)。
 * **产出**：生成了全新的 `coc_tensor_10x15x20.lmdb` 数据库。此时，该 Tensor 真正具备了“精准锁定对焦点空间位置”的能力。
 
-### 第四步：人工肉眼可视化验证
+### 第三步：人工肉眼可视化验证
 ```bash
-python visualize_generated_db.py
+python 2_visualize_dataset.py
 ```
 * **目的**：使用 OpenCV 的单图交互窗口核查。
 * **过程**：读取刚出炉的真实图像与 Tensor 结果侧并侧拼接 (Side-by-Side)，绘制出 `Radius 期望图 (带 JET 颜色标尺与数值字印)`与 `Sharpness 对比图`。

@@ -73,3 +73,170 @@ class MILPatchCNN(nn.Module):
             # During inference (generate_tensor_db), we return the dense [B, 10, 15, 20] tensor!
             spatial_logits = patch_logits.permute(0, 2, 1).view(B, 10, 15, 20)
             return spatial_logits
+
+class BasicBlock(nn.Module):
+    """标准的 ResNet 基础残差块"""
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, 3, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, 3, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        
+    def forward(self, x):
+        residual = x
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        out += residual
+        return self.relu(out)
+
+class MiniHRNetMIL(nn.Module):
+    """
+    结合了 64x64 重叠切片 (Overlap 50%, Reflect Padding) 
+    和 4 分支迷你高分辨率并行架构的 MIL 网络
+    """
+    def __init__(self, num_classes=10):
+        super().__init__()
+        
+        # Stem
+        self.stem = nn.Sequential(
+            nn.Conv2d(1, 16, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(16),
+            nn.ReLU(inplace=True)
+        )
+        
+        # Stage 1 (Branch 1: 64x64)
+        self.layer1 = BasicBlock(16, 16)
+        
+        # Transition 1 to 2
+        self.trans1_to_2 = nn.Sequential(
+            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True)
+        )
+        
+        # Stage 2 (B1: 64x64, B2: 32x32)
+        self.layer2_b1 = BasicBlock(16, 16)
+        self.layer2_b2 = BasicBlock(32, 32)
+        
+        self.fuse2_21 = nn.Sequential(nn.Conv2d(32, 16, kernel_size=1, bias=False), nn.BatchNorm2d(16))
+        self.fuse2_12 = nn.Sequential(nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1, bias=False), nn.BatchNorm2d(32))
+        
+        # Transition 2 to 3
+        self.trans2_to_3 = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True)
+        )
+        
+        # Stage 3 (B1: 64x64, B2: 32x32, B3: 16x16)
+        self.layer3_b1 = BasicBlock(16, 16)
+        self.layer3_b2 = BasicBlock(32, 32)
+        self.layer3_b3 = BasicBlock(64, 64)
+        
+        # Fusion 3
+        self.fuse3_21 = nn.Sequential(nn.Conv2d(32, 16, kernel_size=1, bias=False), nn.BatchNorm2d(16))
+        self.fuse3_32 = nn.Sequential(nn.Conv2d(64, 32, kernel_size=1, bias=False), nn.BatchNorm2d(32))
+        self.fuse3_12 = nn.Sequential(nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1, bias=False), nn.BatchNorm2d(32))
+        self.fuse3_23 = nn.Sequential(nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1, bias=False), nn.BatchNorm2d(64))
+
+        # Transition 3 to 4
+        self.trans3_to_4 = nn.Sequential(
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True)
+        )
+
+        # Stage 4 (B1: 64x64, B2: 32x32, B3: 16x16, B4: 8x8)
+        self.layer4_b1 = BasicBlock(16, 16)
+        self.layer4_b2 = BasicBlock(32, 32)
+        self.layer4_b3 = BasicBlock(64, 64)
+        self.layer4_b4 = BasicBlock(128, 128)
+        
+        # Head
+        self.head_b1_down = nn.Sequential(
+            nn.Conv2d(16, 32, 3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True)
+        )
+        self.head_b2_down = nn.Sequential(
+            nn.Conv2d(32, 64, 3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True)
+        )
+        self.head_b3_down = nn.Sequential(
+            nn.Conv2d(64, 128, 3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True)
+        )
+        
+        self.classifier = nn.Sequential(
+            nn.Linear(128, 256),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.2),
+            nn.Linear(256, num_classes)
+        )
+
+    def forward(self, x):
+        import torch.nn.functional as F
+        B = x.size(0)
+        
+        # 1. 边缘 16 像素 Reflect Padding, [B, 1, 480, 640] -> [B, 1, 512, 672]
+        x_pad = F.pad(x, (16, 16, 16, 16), mode='reflect')
+        
+        # 裁剪出 64x64，步长 32，共 300 块
+        patches = x_pad.unfold(2, 64, 32).unfold(3, 64, 32) 
+        
+        patches = patches.contiguous().view(B, 300, 1, 64, 64)
+        patches_flat = patches.view(B * 300, 1, 64, 64)
+        
+        # 2. 多尺度特征提取
+        out_stem = self.stem(patches_flat) 
+        
+        b1 = self.layer1(out_stem)
+        
+        b2 = self.trans1_to_2(b1) 
+        
+        b1_out = self.layer2_b1(b1)
+        b2_out = self.layer2_b2(b2)
+        
+        b1_new = F.relu(b1_out + F.interpolate(self.fuse2_21(b2_out), scale_factor=2.0))
+        b2_new = F.relu(b2_out + self.fuse2_12(b1_out))
+        
+        b3 = self.trans2_to_3(b2_new) 
+        
+        b1_out = self.layer3_b1(b1_new)
+        b2_out = self.layer3_b2(b2_new)
+        b3_out = self.layer3_b3(b3)
+        
+        b1_new = F.relu(b1_out + F.interpolate(self.fuse3_21(b2_out), scale_factor=2.0))
+        b2_new = F.relu(b2_out + self.fuse3_12(b1_out) + F.interpolate(self.fuse3_32(b3_out), scale_factor=2.0))
+        b3_new = F.relu(b3_out + self.fuse3_23(b2_out))
+
+        b4 = self.trans3_to_4(b3_new)
+
+        b1_final = self.layer4_b1(b1_new)
+        b2_final = self.layer4_b2(b2_new)
+        b3_final = self.layer4_b3(b3_new)
+        b4_final = self.layer4_b4(b4)
+        
+        # 3. 分类降维输出
+        b1_reduced = self.head_b1_down(b1_final)
+        b12 = b1_reduced + b2_final
+        b12_reduced = self.head_b2_down(b12)
+        b123 = b12_reduced + b3_final
+        b123_reduced = self.head_b3_down(b123)
+        b1234 = b123_reduced + b4_final
+        
+        feats = F.adaptive_avg_pool2d(b1234, (1, 1)).view(B * 300, -1)
+        
+        patch_logits = self.classifier(feats) 
+        patch_logits = patch_logits.view(B, 300, 10)
+        
+        if self.training:
+            global_logits, _ = torch.max(patch_logits, dim=1) 
+            return global_logits
+        else:
+            spatial_logits = patch_logits.permute(0, 2, 1).view(B, 10, 15, 20)
+            return spatial_logits

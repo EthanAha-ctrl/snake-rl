@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 # --- Configuration ---
 DATA_ROOT = "data"
 LMDB_PATH = os.path.join(DATA_ROOT, "coc_tensor_10x15x20.lmdb")
-IMG_LMDB_PATH = os.path.join(DATA_ROOT, "coc_img_10x480x640.lmdb")
-META_PATH = os.path.join(DATA_ROOT, "coc_meta.pkl")
+IMG_LMDB_PATH = os.path.join(DATA_ROOT, "coc_foreground_background_10x480x640.lmdb")
+META_PATH = os.path.join(DATA_ROOT, "coc_meta_foreground_background.pkl")
 
 def visualize_dataset():
     if not os.path.exists(LMDB_PATH) or not os.path.exists(META_PATH):
@@ -50,7 +50,10 @@ def visualize_dataset():
             
         with img_env.begin() as txn:
             img_bytes = txn.get(key_str.encode('ascii'))
-            orig_gray = np.frombuffer(img_bytes, dtype=np.uint8).reshape(480, 640)
+            img_array = np.frombuffer(img_bytes, dtype=np.uint8)
+            orig_gray = cv2.imdecode(img_array, cv2.IMREAD_GRAYSCALE)
+            if orig_gray is None:
+                continue
             orig_bgr = cv2.cvtColor(orig_gray, cv2.COLOR_GRAY2BGR)
             
         scene_idx = current_idx // 10

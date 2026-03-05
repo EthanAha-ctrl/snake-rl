@@ -10,12 +10,12 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import transforms
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from model import MILPatchCNN
+from model import MiniHRNetMIL
 from torch.utils.tensorboard import SummaryWriter
 
 # --- Configuration ---
 BATCH_SIZE = 64
-NUM_EPOCHS = 20
+NUM_EPOCHS = 50
 LEARNING_RATE = 5e-4
 WEIGHT_DECAY = 1e-4
 NUM_WORKERS = 4
@@ -58,9 +58,12 @@ class CoCDataset(Dataset):
         # Read Bytes
         img_bytes = self.txn.get(key_str.encode('ascii'))
         
-        # Decode from raw bytes (it was saved via img.tobytes() not imencode in generate_tensor_db)
-        img_array = np.frombuffer(img_bytes, dtype=np.uint8).reshape(480, 640)
-        img = img_array
+        # Decode from PNG bytes
+        img_array = np.frombuffer(img_bytes, dtype=np.uint8)
+        img = cv2.imdecode(img_array, cv2.IMREAD_GRAYSCALE)
+        
+        if img is None:
+             raise ValueError(f"Failed to decode image for key {key_str}")
         
         # To Tensor (0-1 float)
         # img is [H, W], add channel dim -> [1, H, W]
@@ -103,8 +106,8 @@ def main():
     val_loader = DataLoader(val_set, batch_size=BATCH_SIZE, shuffle=False, 
                             num_workers=NUM_WORKERS, pin_memory=True, persistent_workers=True)
 
-    # 2. Model: New MILPatchCNN
-    model = MILPatchCNN(num_classes=10).to(DEVICE)
+    # 2. Model: New MiniHRNetMIL
+    model = MiniHRNetMIL(num_classes=10).to(DEVICE)
     
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
