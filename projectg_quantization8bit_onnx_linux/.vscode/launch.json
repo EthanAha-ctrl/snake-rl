@@ -1,0 +1,24 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "(gdb) Debug C++ Inference",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/c_plus_plus_src/build/inference",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/c_plus_plus_src/build",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        }
+    ]
+}
