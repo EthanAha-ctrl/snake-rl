@@ -8,7 +8,7 @@ import torch
 import os
 
 # Tensor DB paths
-META_PATH = os.path.join("reference", "project7", "data", "coc_meta.pkl")
+META_PATH = os.path.join("reference", "project7", "data", "coc_meta_foreground_background.pkl")
 LMDB_PATH = os.path.join("reference", "project7", "data", "coc_tensor_10x15x20.lmdb")
 
 class CoCEnv(my_gym.Env):
@@ -60,14 +60,26 @@ class CoCEnv(my_gym.Env):
         with open(self.meta_path, 'rb') as f:
             meta_info = pickle.load(f)
             
-        self.label_to_data = {i: [] for i in range(10)}
+        # Two signs: -1 (behind focal plane) and 1 (in front of focal plane)
+        self.label_to_data = {
+            1: {i: [] for i in range(10)},
+            -1: {i: [] for i in range(10)}
+        }
         
         count = 0
         for item in meta_info:
             if len(item) == 3:
-                key, label, sharpness_grid = item
-                self.label_to_data[int(label)].append((sharpness_grid, key))
-                count += 1
+                key, label_data, sharpness_grid = item
+                if isinstance(label_data, (list, tuple)):
+                    sign_meta, label_int = label_data
+                else:
+                    # Fallback for old data format if any exist
+                    sign_meta = 1 
+                    label_int = label_data
+                
+                if sign_meta in self.label_to_data:
+                    self.label_to_data[sign_meta][int(label_int)].append((sharpness_grid, key))
+                    count += 1
             else:
                 pass
         
@@ -95,8 +107,22 @@ class CoCEnv(my_gym.Env):
         self.device = torch.device('cpu') 
         self.class_values = torch.arange(0, 10, dtype=torch.float32).unsqueeze(0)
 
-    def _get_random_data_for_label(self, label):
-        data_list = self.label_to_data[int(label)]
+    def _get_random_data_for_label(self, label, sign):
+        # sign is -1 or 1
+        if sign not in self.label_to_data:
+            sign = 1
+            
+        data_list = self.label_to_data[sign][int(label)]
+        
+        # If the requested list is empty for this sign, try the other sign as fallback
+        if not data_list:
+            other_sign = -1 if sign == 1 else 1
+            if other_sign in self.label_to_data:
+                data_list = self.label_to_data[other_sign][int(label)]
+            
+        if not data_list:
+            # Absolute fallback if both are empty or sign invalid
+            return torch.zeros((10, 15, 20), dtype=torch.float32), np.zeros((15, 20), dtype=np.float32)
             
         assert hasattr(self, 'current_img_index'), "current_img_index not set"
         idx = self.current_img_index % len(data_list)
@@ -130,7 +156,7 @@ class CoCEnv(my_gym.Env):
         expected_radius = (masked_probs * self.class_values).sum(dim=1).item()
         return expected_radius
 
-    def _get_interpolated_obs(self, val):
+    def _get_interpolated_obs(self, val, sign):
         val = np.clip(val, 0.0, 9.999)
         label_floor = int(np.floor(val))
         label_ceil = label_floor + 1
@@ -142,8 +168,8 @@ class CoCEnv(my_gym.Env):
         label_floor = min(max(label_floor, 0), 9)
         label_ceil = min(max(label_ceil, 0), 9)
         
-        t_floor, s_floor = self._get_random_data_for_label(label_floor)
-        t_ceil, s_ceil = self._get_random_data_for_label(label_ceil)
+        t_floor, s_floor = self._get_random_data_for_label(label_floor, sign)
+        t_ceil, s_ceil = self._get_random_data_for_label(label_ceil, sign)
         
         # Weighted Average
         t_mix = t_floor * weight_floor + t_ceil * weight_ceil
@@ -176,6 +202,9 @@ class CoCEnv(my_gym.Env):
         self.current_step = 0
         self.target_step = np.random.uniform(self.min_val, self.max_val)
         self.prev_diff = abs(self.target_step - self.ground_truth)
+        sign_val = np.sign(self.target_step - self.ground_truth)
+        sign = 1 if sign_val >= 0 else -1
+        
         self.prev_position = self.target_step
         self.first_trial = True
         '''
@@ -185,7 +214,7 @@ class CoCEnv(my_gym.Env):
         '''
         self.fsm = "coarse search"
         self.fsm_overshoot_count = 0
-        obs, info = self._get_interpolated_obs(self.prev_diff * 10.0)
+        obs, info = self._get_interpolated_obs(self.prev_diff * 10.0, sign)
         return obs, info
 
     def step(self, command):
@@ -203,8 +232,13 @@ class CoCEnv(my_gym.Env):
 
         guess = max(0.0, min(1.0, guess))
         absolute_diff = abs(guess - self.ground_truth)
-        obs, info = self._get_interpolated_obs(absolute_diff * 10.0)
         
+        sign_val = np.sign(guess - self.ground_truth)
+        sign_for_obs = 1 if sign_val >= 0 else -1
+        
+        obs, info = self._get_interpolated_obs(absolute_diff * 10.0, sign_for_obs)
+        
+        sign = np.sign(guess - self.ground_truth)
         self.current_step += 1
         improvement = self.prev_diff - absolute_diff
         r_guess = 0.0
@@ -265,58 +299,11 @@ class CoCEnv(my_gym.Env):
         return obs, total_reward, terminated, False, info
 
     def render(self):
-        import cv2
-        import torch
-        
-        # 1. Get the current observation (11 x 15 x 20)
-        obs_tensor, _ = self._get_interpolated_obs(self.prev_diff * 10.0)
-        spatial = obs_tensor.reshape((11, 15, 20))
-        spatial_sharpness = spatial[0, :, :] # (15, 20)
-        t_mix = spatial[1:, :, :] # (10, 15, 20)
-        
-        # 2. Pixel-wise Expected Radius
-        tensor = torch.from_numpy(t_mix) # [10, 15, 20]
-        probs = torch.softmax(tensor, dim=0)
-        
-        k = 2
-        topk_vals, topk_indices = torch.topk(probs, k, dim=0)
-        mask = torch.zeros_like(probs)
-        mask.scatter_(0, topk_indices, 1.0)
-        
-        masked_probs = probs * mask
-        masked_probs = masked_probs / (masked_probs.sum(dim=0, keepdim=True) + 1e-9)
-        
-        class_values = torch.arange(0, 10, dtype=torch.float32).view(10, 1, 1)
-        expected_radius = (masked_probs * class_values).sum(dim=0).numpy() # [15, 20]
-        
-        # 3. Construct YUV Image
-        yuv = np.zeros((15, 20, 3), dtype=np.uint8)
-        yuv[:, :, 0] = 128 # Luma
-        
-        # map expected_radius 0..10 -> U channel 0..128
-        u_channel = np.clip((expected_radius / 10.0) * 128.0, 0, 255).astype(np.uint8)
-        yuv[:, :, 1] = u_channel
-        
-        # map sharpness 0..2*scale -> V channel 128
-        v_channel = np.clip((spatial_sharpness / (2.0 * self.sharpness_scale + 1e-5)) * 128.0, 0, 255).astype(np.uint8)
-        yuv[:, :, 2] = v_channel
-        
-        # Convert YUV to RGB
-        rgb = cv2.cvtColor(yuv, cv2.COLOR_YUV2RGB)
-        
-        # Upscale for visibility
-        rgb_large = cv2.resize(rgb, (400, 300), interpolation=cv2.INTER_NEAREST)
-        
-        # Add telemetry text onto the image
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        t1 = f"Guess: {self.prev_position:.2f} GT: {self.ground_truth:.2f}"
-        t2 = f"Diff: {self.prev_diff:.2f} Step: {self.current_step}"
-        # If we had the original image key, we could print it. But we just show the physics here.
-        
-        cv2.putText(rgb_large, t1, (10, 25), font, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
-        cv2.putText(rgb_large, t2, (10, 50), font, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
-        
-        return rgb_large
-
+        if self.render_mode == "rgb_array":
+            # 400x400 empty canvas
+            return np.zeros((400, 400, 3), dtype=np.uint8)
+        elif self.render_mode == "human":
+            pass
+            
     def close(self):
         pass
