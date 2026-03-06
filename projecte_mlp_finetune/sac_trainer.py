@@ -288,22 +288,16 @@ class SACTrainer:
         else:
             print(f"WARNING: {transformer_path} not found. Transformer is randomly initialized!")
         
-        # 2. Networks (Load old dimensions to match mlp_best.pth from projectc)
-        old_obs_dim = 40
-        self.critic = Critic(old_obs_dim, action_dim, self.cfg.hidden_dim).to(self.device)
-        self.actor = Actor(old_obs_dim, action_dim, self.cfg.hidden_dim).to(self.device)
-        
-        # We are training from scratch, no longer loading reference/projectc/mlp_best.pth
-
-        # 3. Replace the first layers to bridge from Encoder's 52 (32+20) to hidden_dim 256
-        # Previous projectc was 40 dim, so 52 dim is a very sweet spot for rapid RL learning
-        self.critic.shared_net_1[0] = nn.Linear(52 + action_dim, self.cfg.hidden_dim).to(self.device)
-        self.critic.shared_net_2[0] = nn.Linear(52 + action_dim, self.cfg.hidden_dim).to(self.device)
-        self.actor.shared_net[0] = nn.Linear(52, self.cfg.hidden_dim).to(self.device)
+        # 2. Networks (Directly initialize with latent dimension 52)
+        # latent_dim = 32 (transformer) + 20 (action history) = 52
+        self.latent_dim = 52
+        self.critic = Critic(self.latent_dim, action_dim, self.cfg.hidden_dim).to(self.device)
+        self.actor = Actor(self.latent_dim, action_dim, self.cfg.hidden_dim).to(self.device)
         
         self.critic_target = copy.deepcopy(self.critic)
         
-        # 4. Optimizers
+        # 3. Optimizers
+        print(f"Networks initialized with latent_dim={self.latent_dim}")
         print("Freezing Encoder, Unfreezing MLPs...")
         for p in self.encoder.parameters(): p.requires_grad = False
         for p in self.critic.parameters(): p.requires_grad = True

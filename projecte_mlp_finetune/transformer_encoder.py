@@ -49,7 +49,7 @@ class SpatioTemporalEncoder(nn.Module):
         action_feat = obs_stack[:, vision_total_dim:]  # [B, 20]
         
         # 2. Reshape obs_feat to [B, T, C, H, W]
-        vision_raw = obs_feat.view(B, self.history_len, self.channels, self.H, self.W)
+        vision_raw = obs_feat.reshape(B, self.history_len, self.channels, self.H, self.W)
         vision_feat = vision_raw.permute(0, 1, 3, 4, 2) # [B, T=10, H=15, W=20, C=11]
         
         # 3. Project Vision to d_model
@@ -63,14 +63,14 @@ class SpatioTemporalEncoder(nn.Module):
         
         pos_emb_v = self.pe_t(t_coords) + self.pe_y(y_coords) + self.pe_x(x_coords) # [10, 15, 20, 64]
         vision_with_pe = vision_proj + pos_emb_v.unsqueeze(0) # [B, 10, 15, 20, 64]
-        vision_tokens = vision_with_pe.view(B, self.history_len, -1, self.d_model) # [B, 10, 300, 64]
+        vision_tokens = vision_with_pe.reshape(B, self.history_len, -1, self.d_model) # [B, 10, 300, 64]
         
         # 5. Flatten Spatio-Temporal dimensions to form sequence
-        seqence_feat = vision_tokens.view(B, -1, self.d_model) # [B, 3000, 64]
+        seqence_feat = vision_tokens.reshape(B, -1, self.d_model) # [B, 3000, 64]
         
         # 6. Prepend [CLS] token
         cls_tokens = self.cls_token.expand(B, -1, -1) # [B, 1, 64]
-        seqence_feat = torch.cat([cls_tokens, seqence_feat], dim=1) # [B, 3001, 64]
+        seqence_feat = torch.cat([cls_tokens, seqence_feat], dim=1).contiguous() # [B, 3001, 64]
         
         # 7. Pass through Transformer
         encoded_seq = self.transformer(seqence_feat) # [B, 3001, 64]
