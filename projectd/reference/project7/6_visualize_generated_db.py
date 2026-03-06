@@ -134,7 +134,11 @@ def visualize_dataset():
         
         # OpenCV text drawing
         t1 = f"Idx: {current_idx}/{total_images-1} | Scene: {scene_idx} | Camera Focus (Step): {step_idx}"
-        t2 = f"Target GT Depth: {label} | [{key_str}]"
+        if isinstance(label, (list, tuple)):
+            sign, radius = label
+            t2 = f"Target GT Depth: {sign*radius} (S:{sign} R:{radius}) | [{key_str}]"
+        else:
+            t2 = f"Target GT Depth: {label} | [{key_str}]"
         
         # Draw labels on the plots
         cv2.putText(radius_large_with_bar, "Expected Radius (0-9)", (10, 30), font, 0.8, (255, 255, 255), 2, cv2.LINE_AA)

@@ -154,7 +154,7 @@ def main():
                 spatial_logits_np = spatial_logits.cpu().numpy().astype(np.float32) 
                 
                 # Save to LMDB and Meta
-                for i in range(10):
+                for i in range(20):
                     key_str = f"image_{global_counter:08d}"
                     
                     # 1. Save Tensor
@@ -166,9 +166,9 @@ def main():
                     if success:
                          img_txn.put(key_str.encode('ascii'), encoded_bytes.tobytes())
                     
-                    label_radius = labels[i]
+                    label_data = labels[i] # (sign, radius)
                     sharpness_grid = sharpnesses[i]
-                    meta_info.append((key_str, label_radius, sharpness_grid))
+                    meta_info.append((key_str, label_data, sharpness_grid))
                     global_counter += 1
                 
                 # Periodic Commit to save memory

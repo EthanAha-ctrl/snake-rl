@@ -60,14 +60,26 @@ class CoCEnv(my_gym.Env):
         with open(self.meta_path, 'rb') as f:
             meta_info = pickle.load(f)
             
-        self.label_to_data = {i: [] for i in range(10)}
+        # Two signs: -1 (behind focal plane) and 1 (in front of focal plane)
+        self.label_to_data = {
+            1: {i: [] for i in range(10)},
+            -1: {i: [] for i in range(10)}
+        }
         
         count = 0
         for item in meta_info:
             if len(item) == 3:
-                key, label, sharpness_grid = item
-                self.label_to_data[int(label)].append((sharpness_grid, key))
-                count += 1
+                key, label_data, sharpness_grid = item
+                if isinstance(label_data, (list, tuple)):
+                    sign_meta, label_int = label_data
+                else:
+                    # Fallback for old data format if any exist
+                    sign_meta = 1 
+                    label_int = label_data
+                
+                if sign_meta in self.label_to_data:
+                    self.label_to_data[sign_meta][int(label_int)].append((sharpness_grid, key))
+                    count += 1
             else:
                 pass
         
@@ -95,8 +107,22 @@ class CoCEnv(my_gym.Env):
         self.device = torch.device('cpu') 
         self.class_values = torch.arange(0, 10, dtype=torch.float32).unsqueeze(0)
 
-    def _get_random_data_for_label(self, label):
-        data_list = self.label_to_data[int(label)]
+    def _get_random_data_for_label(self, label, sign):
+        # sign is -1 or 1
+        if sign not in self.label_to_data:
+            sign = 1
+            
+        data_list = self.label_to_data[sign][int(label)]
+        
+        # If the requested list is empty for this sign, try the other sign as fallback
+        if not data_list:
+            other_sign = -1 if sign == 1 else 1
+            if other_sign in self.label_to_data:
+                data_list = self.label_to_data[other_sign][int(label)]
+            
+        if not data_list:
+            # Absolute fallback if both are empty or sign invalid
+            return torch.zeros((10, 15, 20), dtype=torch.float32), np.zeros((15, 20), dtype=np.float32)
             
         assert hasattr(self, 'current_img_index'), "current_img_index not set"
         idx = self.current_img_index % len(data_list)
@@ -130,7 +156,7 @@ class CoCEnv(my_gym.Env):
         expected_radius = (masked_probs * self.class_values).sum(dim=1).item()
         return expected_radius
 
-    def _get_interpolated_obs(self, val):
+    def _get_interpolated_obs(self, val, sign):
         val = np.clip(val, 0.0, 9.999)
         label_floor = int(np.floor(val))
         label_ceil = label_floor + 1
@@ -142,8 +168,8 @@ class CoCEnv(my_gym.Env):
         label_floor = min(max(label_floor, 0), 9)
         label_ceil = min(max(label_ceil, 0), 9)
         
-        t_floor, s_floor = self._get_random_data_for_label(label_floor)
-        t_ceil, s_ceil = self._get_random_data_for_label(label_ceil)
+        t_floor, s_floor = self._get_random_data_for_label(label_floor, sign)
+        t_ceil, s_ceil = self._get_random_data_for_label(label_ceil, sign)
         
         # Weighted Average
         t_mix = t_floor * weight_floor + t_ceil * weight_ceil
@@ -176,6 +202,9 @@ class CoCEnv(my_gym.Env):
         self.current_step = 0
         self.target_step = np.random.uniform(self.min_val, self.max_val)
         self.prev_diff = abs(self.target_step - self.ground_truth)
+        sign_val = np.sign(self.target_step - self.ground_truth)
+        sign = 1 if sign_val >= 0 else -1
+        
         self.prev_position = self.target_step
         self.first_trial = True
         '''
@@ -185,7 +214,7 @@ class CoCEnv(my_gym.Env):
         '''
         self.fsm = "coarse search"
         self.fsm_overshoot_count = 0
-        obs, info = self._get_interpolated_obs(self.prev_diff * 10.0)
+        obs, info = self._get_interpolated_obs(self.prev_diff * 10.0, sign)
         return obs, info
 
     def step(self, command):
@@ -203,8 +232,13 @@ class CoCEnv(my_gym.Env):
 
         guess = max(0.0, min(1.0, guess))
         absolute_diff = abs(guess - self.ground_truth)
-        obs, info = self._get_interpolated_obs(absolute_diff * 10.0)
         
+        sign_val = np.sign(guess - self.ground_truth)
+        sign_for_obs = 1 if sign_val >= 0 else -1
+        
+        obs, info = self._get_interpolated_obs(absolute_diff * 10.0, sign_for_obs)
+        
+        sign = np.sign(guess - self.ground_truth)
         self.current_step += 1
         improvement = self.prev_diff - absolute_diff
         r_guess = 0.0

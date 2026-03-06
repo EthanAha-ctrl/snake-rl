@@ -55,9 +55,14 @@ class CoCDataset(Dataset):
         # Handle both old (2 args) and new (3 args) metadata formats
         item = self.meta_info[idx]
         if len(item) == 3:
-            key_str, label_int, _ = item
+            key_str, label_data, _ = item
         else:
-            key_str, label_int = item
+            key_str, label_data = item
+            
+        if isinstance(label_data, (list, tuple)):
+            sign, label_int = label_data
+        else:
+            label_int = label_data
         
         # Read Bytes
         img_bytes = self.txn.get(key_str.encode('ascii'))

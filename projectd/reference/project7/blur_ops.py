@@ -141,9 +141,11 @@ def generate_focus_stack(bg_gray, fg_gray, a_list, c_depth):
     mask = create_random_polygon_mask(h, w)
     
     fg_radii = np.abs(np.array(a_list)).astype(int)
-    sign = random.choice([-1, 1])
-    bg_radii = np.abs(np.array(a_list) + sign * c_depth).astype(int)
-    bg_radii = np.clip(bg_radii, 0, 9)
+    bg_radii_positive = np.abs(c_depth + np.array(a_list)).astype(int)
+    bg_radii_negative = np.abs(c_depth - np.array(a_list)).astype(int)
+    bg_radii_positive = np.clip(bg_radii_positive, 0, 9)
+    bg_radii_negative = np.clip(bg_radii_negative, 0, 9)
+
     zeros = np.zeros_like(a_list)
     
     # Convert sRGB (approx) to linear light space by applying gamma 2.2
@@ -153,10 +155,11 @@ def generate_focus_stack(bg_gray, fg_gray, a_list, c_depth):
     fg_premult_img_linear = fg_gray_linear * (mask.astype(np.float32) / 255.0)
     
     # Blur the foreground linear energy
-    fg_blurred_imgs, fg_sharpness = core_blur(fg_premult_img_linear, zeros, fg_radii)
+    fg_blurred_imgs, _ = core_blur(fg_premult_img_linear, zeros, fg_radii)
     
     # Blur the background linear image
-    bg_imgs, bg_sharpness = core_blur(bg_gray_linear, zeros, bg_radii)
+    bg_imgs_positive, _ = core_blur(bg_gray_linear, zeros, bg_radii_positive)
+    bg_imgs_negative, _ = core_blur(bg_gray_linear, zeros, bg_radii_negative)
     
     # Blur the mask to get foreground alpha (occlusion strength)
     mask_blurred, _ = core_blur(mask, zeros, fg_radii)
@@ -165,26 +168,28 @@ def generate_focus_stack(bg_gray, fg_gray, a_list, c_depth):
     labels = []
     sharpnesses = []
     
-    for i in range(10):
-        # Result arrays from core_blur are uint8 0-255, scale back to 0-1 for precision blending
-        fg_energy_linear = fg_blurred_imgs[i].astype(np.float32) / 255.0
-        bg_lum_linear = bg_imgs[i].astype(np.float32) / 255.0
-        
-        # Mask is 0-255, scale to 0-1 for alpha (occlusion)
-        fg_alpha = mask_blurred[i].astype(np.float32) / 255.0
-        
-        # Physics-based blending in linear space
-        blended_linear = fg_energy_linear + bg_lum_linear * (1.0 - fg_alpha)
-        
-        # Convert back to sRGB space by applying inverse gamma (1/2.2)
-        blended_srgb = np.power(np.clip(blended_linear, 0, 1.0), 1.0 / 2.2) * 255.0
-        blended = blended_srgb.astype(np.uint8)
-        
-        blended_imgs.append(blended)
-        labels.append(int(fg_radii[i])) # The label is the absolute blur radius of the foreground
-        
-        # Calculate final sharpness on the final blended_srgb image
-        final_sharpness = calculate_sharpness_grid(blended_srgb, kernel_size=5)
-        sharpnesses.append(final_sharpness)
+    for sign in [-1, 1]:
+        bg_imgs = bg_imgs_positive if sign == 1 else bg_imgs_negative
+        for i in range(10):
+            # Result arrays from core_blur are uint8 0-255, scale back to 0-1 for precision blending
+            fg_energy_linear = fg_blurred_imgs[i].astype(np.float32) / 255.0
+            bg_lum_linear = bg_imgs[i].astype(np.float32) / 255.0
+            
+            # Mask is 0-255, scale to 0-1 for alpha (occlusion)
+            fg_alpha = mask_blurred[i].astype(np.float32) / 255.0
+            
+            # Physics-based blending in linear space
+            blended_linear = fg_energy_linear + bg_lum_linear * (1.0 - fg_alpha)
+            
+            # Convert back to sRGB space by applying inverse gamma (1/2.2)
+            blended_srgb = np.power(np.clip(blended_linear, 0, 1.0), 1.0 / 2.2) * 255.0
+            blended = blended_srgb.astype(np.uint8)
+            
+            blended_imgs.append(blended)
+            labels.append((sign, int(fg_radii[i]))) # The label is the absolute blur radius of the foreground
+            
+            # Calculate final sharpness on the final blended_srgb image
+            final_sharpness = calculate_sharpness_grid(blended_srgb, kernel_size=5)
+            sharpnesses.append(final_sharpness)
         
     return blended_imgs, labels, sharpnesses
