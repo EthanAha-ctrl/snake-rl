@@ -164,8 +164,22 @@ The training takes exessively long time: 200K-ish steps in 16 hours on a single 
 
 The resulting performance is somewhat reasonable: 4 failures out of 10 episode.
 
-<img width="897" height="280" alt="image" src="https://github.com/user-attachments/assets/a156b19d-7656-4567-976d-dc17807ef416" />
-
+```
+New best internal score (minimized loss): -0.0022. Saved to sac_coc_best.pth
+------------------------------------------
+| train/                  |             |
+|    ep_len_mean          | 0.0000      |
+|    ep_rew_mean          | 0.0000      |
+|    fps                  | 4.0000      |
+|    iterations           | 0.0000      |
+|    time_elapsed         | 11403.1586  |
+|    total_timesteps      | 48250.0000  |
+|    loss_guess           | 0.0022      |
+|    loss_trigger         | 0.0068      |
+|    loss_bc              | 0.0022      |
+|    score                | -0.0022     |
+------------------------------------------
+```
 
 ## Project e, CoC + Sharpness + SpatialTemporal Transformer: MLP fine tune: Project d
 
