@@ -184,7 +184,23 @@ New best internal score (minimized loss): -0.0022. Saved to sac_coc_best.pth
 ## Project e, CoC + Sharpness + SpatialTemporal Transformer: MLP fine tune: Project d
 
 Based on project d, freeze transformer and unfreeze MLP. Let MLP learns the a) noise of transformer; b) can't fully trust and stop by looking at the sharpness only.
-
+```
+New best score: 21.2902. Saved model to sac_coc_best.pth
+------------------------------------------
+| train/                  |             |
+|    ep_len_mean          | 3.8000      |
+|    ep_rew_mean_0        | 13.9102     |
+|    ep_rew_mean_1        | 11.1800     |
+|    fps                  | 10.0000     |
+|    iterations           | 0.0000      |
+|    time_elapsed         | 31655.1842  |
+|    total_timesteps      | 319000.0000 |
+|    loss_q               | 0.3731      |
+|    loss_pi              | -5.4556     |
+|    alpha                | 0.0256      |
+|    score                | 21.2902     |
+------------------------------------------
+```
 ## Project f, replacing ideal circular CoC with captured CoC
 
 (TBD)
