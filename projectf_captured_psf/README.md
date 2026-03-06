@@ -1,55 +1,32 @@
-# HRNet 模糊分类项目
+# 视场相关模糊 (Field-Dependent Blur) 实施指南
 
-本项目使用 HRNet-W18 模型来对图像的模糊半径（0-9）进行分类。
+本指南详细记录了在使用模拟/占位的 Circular SFR (Spatial Frequency Response) 点扩散函数 (PSF) 构建**视场相关模糊处理管线 (Field-Dependent Blur Pipeline)** 时所采取的步骤。
 
-## 最近更新
+## 实施内容
 
-### 1. 标签范围修复 (0-9)
-- **问题**: 训练脚本 `4_train.py` 之前使用的是 1-10 的标签范围并减 1，这导致在数据集更新为直接使用 0-9 时出现了错误。
-- **修复**: 更新了 `4_train.py`，现在直接使用 0-9 的标签而无需修改。
+1.  **创建了 `sfr_processor.py`**:
+    -   实现了一个基础框架 `multiframe_average(image_paths)`。当未来有真实数据时，此函数将用于对多张带有噪点的原始图像进行平均降噪。
+    -   实现了 `get_mock_psf_grid(radius, grid_h, grid_w)` 来动态生成一个符合物理规律的 PSF 网格。
+    -   这些模拟的 PSF 主要是用来复现真实镜头的像差：
+        -   网格中心的 PSF 会保持相对锐利，或者带有一点点均匀的轻微高斯模糊（即便是 `radius == 0` 的情况，也会施加基础模糊以模拟镜头固有的不完美）。
+        -   网格边缘的 PSF 会改变其协方差矩阵来进行拉伸，以此模拟径向和切向的像散 (Astigmatism) 及彗差 (Coma)，从而形成细长的核 (Kernel)。
 
-### 2. 评估元数据格式
-- **更新**: `5_evaluate.py` 脚本已更新，可以处理新的元数据格式，该格式包含 3 个元素：`(key, label, sharpness_map)`。
+2.  **更新了 `blur_ops.py`**:
+    -   移除了原本均匀的圆形 CPU/GPU 卷积核 (`cv2.circle`)。
+    -   新增了 `field_dependent_convolution(img_tensor, psf_grid)`，该函数能正确执行空间可变的模糊：
+        -   它会提取网格尺寸（比如 3x3），并使用网格中的**每一个** PSF 对整张图像分别进行 2D 卷积。
+        -   随后应用**空间融合 (Spatial Blending)**（基于目标区域的双线性插值权重）来无缝合并这些卷积结果，防止图像上出现生硬的网格拼接边界。
+    -   更新了 `core_blur` 以便从 `sfr_processor.py` 获取这些空间网格，并应用新的卷积方法。
 
-### 3. Tensor 数据库生成 (新)
-我们添加了一个新的处理流，将 HRNet 的特征（10x15x20 张量）导出到一个单独的 LMDB 数据库中以供未来使用。
+3.  **数据集管线兼容性验证**:
+    -   由于 `core_blur` 的输入和输出接口保持不变（仍然接收 `a_list`/`b_list` 并返回模糊后的批次图像和清晰度图），因此 `preprocessing.py` 可以零成本无缝调用这套全新的物理引擎。
+    -   同理，`generate_tensor_db.py` 也能直接摄取这些新生成的图像，无需进行任何代码层面的修改。
 
-- **脚本**: `3_generate_tensor_db.py`
-  - 从 `coc_train.lmdb` 加载图像。
-  - 运行 HRNet 推理。
-  - 将输出的张量 `[10, 15, 20]` (通道数, 高度, 宽度) 保存到 `coc_tensor_10x15x20.lmdb`。
-  - **注意**: 分辨率被自然下采样了 32 倍 (480/32=15, 640/32=20)。
+## 验证结果
 
-- **验证**: `7_verify_tensor_performance.py`
-  - 读取生成的张量。
-  - 应用 **Top-k Soft Expectation (Top-k 软期望)**:
-    1. 计算 10 个类别的 Softmax 概率。
-    2. 选择 Top-3 概率（将其余屏蔽为 0）。
-    3. 重新归一化概率使其总和为 1。
-    4. 计算加权的期望半径。
-  - 验证生成的特征是否与真实标签匹配。
-  - 输出每个标签的详细误差直方图。
+我们编写并运行了测试脚本 `test_field_dependent_blur.py`:
+-   它成功生成了一个 480x640 的合成网格图像。
+-   它针对模糊半径 0、1 和 2 分别运行了 `core_blur`。
+-   输出结果正确生成了 3 张融合后的图像。在这些图像中，你可以看到镜头像差是如何基于空间位置平滑地改变网格线条的。
 
-## 关键脚本
-
-| 脚本 | 描述 |
-| :--- | :--- |
-| `2_preprocessing.py` | 从源图像生成训练数据集 (LMDB)。 |
-| `4_train.py` | 在数据集上训练 HRNet-W18 模型。 |
-| `5_evaluate.py` | 在测试集上运行评估循环。 |
-| `6_evaluate_single_image.py` | 在单张图像上可视化模型预测（带有裁剪图）。 |
-| `3_generate_tensor_db.py` | **[新]** 生成特征 Tensor 数据库。 |
-| `7_verify_tensor_performance.py` | **[新]** 验证 Tensor 数据库质量。 |
-
-## 使用方法
-
-### 生成 Tensor 数据库
-```bash
-python 3_generate_tensor_db.py
-```
-
-### 验证 Tensor 数据库
-```bash
-python 7_verify_tensor_performance.py
-```
-这会打印出每个标签（0-9）的详细误差分析表，显示准确率和误差分布。
+*这套处理管线目前已经完全就绪。一旦你拍摄好真实的 Circular SFR Chart 数据，随时可以将其接入系统！*
