@@ -277,6 +277,13 @@ class SACTrainer:
             history_len=10, channels=11, H=15, W=20, 
             d_model=32, nhead=1, num_layers=2, out_dim=256, action_history_dim=20
         ).to(self.device)
+        '''
+        from transformer_swin import TinyVideoSwinEncoder
+        self.encoder = TinyVideoSwinEncoder(
+            history_len=10, channels=11, H=15, W=20, 
+            d_model=32, num_layers=2, out_dim=256, action_history_dim=20
+        ).to(self.device)
+        '''
         
         # 2. Networks (Load old dimensions to match mlp_best.pth from projectc)
         old_obs_dim = 40
