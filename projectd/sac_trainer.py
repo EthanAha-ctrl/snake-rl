@@ -272,8 +272,8 @@ class SACTrainer:
         self.replay_buffer = ReplayBuffer(self.cfg.buffer_size, obs_dim, action_dim, self.device)
         
         # 1. Initialize Encoder
-        from transformer_encoder import SpatioTemporalEncoder
-        self.encoder = SpatioTemporalEncoder(
+        from transformer_lightning import SpatioTemporalLightningEncoder
+        self.encoder = SpatioTemporalLightningEncoder(
             history_len=10, channels=11, H=15, W=20, 
             d_model=32, nhead=1, num_layers=2, out_dim=256, action_history_dim=20
         ).to(self.device)
